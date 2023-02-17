@@ -24,11 +24,11 @@ taskipy = "^1.10.3"
 ipython = "^8.10.0"
 ipykernel = "^6.21.2"
 tqdm = "^4.64.1"
-ml-tools = {git = "https://github.com/vdutor/ml-tools", rev = "main"}
 tensorboardX = "^2.6"
 pandas = "^1.5.3"
 matplotlib = "^3.7.0"
 optax = "^0.1.4"
+ml-tools = {git = "https://github.com/vdutor/ml-tools", rev = "main"}
 
 [tool.taskipy.tasks]
 format = """

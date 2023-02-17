@@ -29,17 +29,6 @@ six = "*"
 test = ["astroid", "pytest"]
 
 [[package]]
-name = "astunparse"
-version = "1.6.3"
-description = "An AST unparser for Python"
-category = "main"
-optional = false
-python-versions = "*"
-
-[package.dependencies]
-six = ">=1.6.1,<2.0"
-
-[[package]]
 name = "attrs"
 version = "22.2.0"
 description = "Classes Without Boilerplate"
@@ -87,30 +76,6 @@ jupyter = ["ipython (>=7.8.0)", "tokenize-rt (>=3.2.0)"]
 uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
-name = "cached-property"
-version = "1.5.2"
-description = "A decorator for caching properties in classes."
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "cachetools"
-version = "5.3.0"
-description = "Extensible memoizing collections and decorators"
-category = "main"
-optional = false
-python-versions = "~=3.7"
-
-[[package]]
-name = "certifi"
-version = "2022.12.7"
-description = "Python package for providing Mozilla's CA Bundle."
-category = "main"
-optional = false
-python-versions = ">=3.6"
-
-[[package]]
 name = "cffi"
 version = "1.15.1"
 description = "Foreign Function Interface for Python calling C code."
@@ -120,14 +85,6 @@ python-versions = "*"
 
 [package.dependencies]
 pycparser = "*"
-
-[[package]]
-name = "charset-normalizer"
-version = "3.0.1"
-description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
-category = "main"
-optional = false
-python-versions = "*"
 
 [[package]]
 name = "check-shapes"
@@ -175,30 +132,6 @@ description = "Extended pickling support for Python objects"
 category = "main"
 optional = false
 python-versions = ">=3.6"
-
-[[package]]
-name = "clu"
-version = "0.0.8"
-description = "Set of libraries for ML training loops in JAX."
-category = "dev"
-optional = false
-python-versions = "*"
-
-[package.dependencies]
-absl-py = "*"
-etils = {version = "*", extras = ["epath"]}
-flax = "*"
-jax = "*"
-jaxlib = "*"
-ml-collections = "*"
-numpy = "*"
-packaging = "*"
-typing-extensions = "*"
-wrapt = "*"
-
-[package.extras]
-pytorch = ["torch (>=1.2.0)"]
-test = ["pytest", "tensorflow", "tensorflow-datasets", "torch (>=1.2.0)"]
 
 [[package]]
 name = "colorama"
@@ -340,37 +273,6 @@ jax = ">=0.3.4"
 jaxtyping = ">=0.2.5"
 
 [[package]]
-name = "etils"
-version = "1.0.0"
-description = "Collection of common python utils"
-category = "dev"
-optional = false
-python-versions = ">=3.8"
-
-[package.dependencies]
-etils = {version = "*", extras = ["epy"], optional = true, markers = "extra == \"epath\""}
-importlib_resources = {version = "*", optional = true, markers = "extra == \"epath\""}
-typing_extensions = {version = "*", optional = true, markers = "extra == \"epath\""}
-zipp = {version = "*", optional = true, markers = "extra == \"epath\""}
-
-[package.extras]
-all = ["etils", "etils", "etils", "etils", "etils", "etils", "etils", "etils", "etils", "etils", "etils", "etils"]
-array-types = ["etils"]
-dev = ["pytest", "pytest-subtests", "pytest-xdist", "pylint (>=2.6.0)", "yapf", "chex"]
-eapp = ["absl-py", "simple-parsing", "etils"]
-ecolab = ["jupyter", "numpy", "mediapy", "etils", "etils"]
-edc = ["typing-extensions", "etils"]
-enp = ["numpy", "etils"]
-epath = ["importlib-resources", "typing-extensions", "zipp", "etils"]
-epy = ["typing-extensions"]
-etqdm = ["absl-py", "tqdm", "etils"]
-etree = ["etils", "etils", "etils", "etils"]
-etree-dm = ["dm-tree", "etils"]
-etree-jax = ["jax", "etils"]
-etree-tf = ["tensorflow", "etils"]
-lazy-imports = ["etils"]
-
-[[package]]
 name = "exceptiongroup"
 version = "1.1.0"
 description = "Backport of PEP 654 (exception groups)"
@@ -391,37 +293,6 @@ python-versions = "*"
 
 [package.extras]
 tests = ["asttokens", "pytest", "littleutils", "rich"]
-
-[[package]]
-name = "flatbuffers"
-version = "23.1.21"
-description = "The FlatBuffers serialization format for Python"
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "flax"
-version = "0.6.5"
-description = "Flax: A neural network library for JAX designed for flexibility"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[package.dependencies]
-jax = ">=0.4.2"
-matplotlib = "*"
-msgpack = "*"
-numpy = ">=1.12"
-optax = "*"
-orbax = "*"
-PyYAML = ">=5.4.1"
-rich = ">=11.1"
-tensorstore = "*"
-typing-extensions = ">=4.1.1"
-
-[package.extras]
-testing = ["atari-py (==0.2.5)", "clu", "gym (==0.18.3)", "jaxlib", "jraph (>=0.0.6dev0)", "ml-collections", "mypy", "opencv-python", "pytest", "pytest-cov", "pytest-custom-exit-code", "pytest-xdist (==1.34.0)", "pytype", "sentencepiece", "tensorflow-text (>=2.11.0)", "tensorflow-datasets", "tensorflow", "torch"]
 
 [[package]]
 name = "fonttools"
@@ -454,87 +325,10 @@ optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
-name = "google-auth"
-version = "2.16.0"
-description = "Google Authentication Library"
-category = "main"
-optional = false
-python-versions = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*"
-
-[package.dependencies]
-cachetools = ">=2.0.0,<6.0"
-pyasn1-modules = ">=0.2.1"
-rsa = {version = ">=3.1.4,<5", markers = "python_version >= \"3.6\""}
-six = ">=1.9.0"
-
-[package.extras]
-aiohttp = ["requests (>=2.20.0,<3.0.0dev)", "aiohttp (>=3.6.2,<4.0.0dev)"]
-enterprise_cert = ["cryptography (==36.0.2)", "pyopenssl (==22.0.0)"]
-pyopenssl = ["pyopenssl (>=20.0.0)", "cryptography (>=38.0.3)"]
-reauth = ["pyu2f (>=0.1.5)"]
-requests = ["requests (>=2.20.0,<3.0.0dev)"]
-
-[[package]]
-name = "google-auth-oauthlib"
-version = "0.4.6"
-description = "Google Authentication Library"
-category = "main"
-optional = false
-python-versions = ">=3.6"
-
-[package.dependencies]
-google-auth = ">=1.0.0"
-requests-oauthlib = ">=0.7.0"
-
-[package.extras]
-tool = ["click (>=6.0.0)"]
-
-[[package]]
-name = "google-pasta"
-version = "0.2.0"
-description = "pasta is an AST-based Python refactoring library"
-category = "main"
-optional = false
-python-versions = "*"
-
-[package.dependencies]
-six = "*"
-
-[[package]]
-name = "grpcio"
-version = "1.52.0"
-description = "HTTP/2-based RPC framework"
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.extras]
-protobuf = ["grpcio-tools (>=1.52.0)"]
-
-[[package]]
-name = "h5py"
-version = "3.8.0"
-description = "Read and write HDF5 files from Python"
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-numpy = ">=1.14.5"
-
-[[package]]
-name = "idna"
-version = "3.4"
-description = "Internationalized Domain Names in Applications (IDNA)"
-category = "main"
-optional = false
-python-versions = ">=3.5"
-
-[[package]]
 name = "importlib-metadata"
 version = "6.0.0"
 description = "Read metadata from Python packages"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 
@@ -806,14 +600,6 @@ docs = ["myst-parser", "sphinx-autodoc-typehints", "sphinxcontrib-github-alt", "
 test = ["ipykernel", "pre-commit", "pytest", "pytest-cov", "pytest-timeout"]
 
 [[package]]
-name = "keras"
-version = "2.11.0"
-description = "Deep learning for humans."
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[[package]]
 name = "kiwisolver"
 version = "1.4.4"
 description = "A fast implementation of the Cassowary constraint solver"
@@ -833,57 +619,6 @@ python-versions = "*"
 atomic_cache = ["atomicwrites"]
 nearley = ["js2py"]
 regex = ["regex"]
-
-[[package]]
-name = "libclang"
-version = "15.0.6.1"
-description = "Clang Python Bindings, mirrored from the official LLVM repo: https://github.com/llvm/llvm-project/tree/main/clang/bindings/python, to make the installation process easier."
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "markdown"
-version = "3.4.1"
-description = "Python implementation of Markdown."
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-importlib-metadata = {version = ">=4.4", markers = "python_version < \"3.10\""}
-
-[package.extras]
-testing = ["coverage", "pyyaml"]
-
-[[package]]
-name = "markdown-it-py"
-version = "2.1.0"
-description = "Python port of markdown-it. Markdown parsing, done right!"
-category = "dev"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-mdurl = ">=0.1,<1.0"
-
-[package.extras]
-testing = ["pytest-regressions", "pytest-cov", "pytest", "coverage"]
-rtd = ["sphinx-book-theme", "sphinx-design", "sphinx-copybutton", "sphinx", "pyyaml", "myst-parser", "attrs"]
-profiling = ["gprof2dot"]
-plugins = ["mdit-py-plugins"]
-linkify = ["linkify-it-py (>=1.0,<2.0)"]
-compare = ["panflute (>=2.1.3,<2.2.0)", "mistune (>=2.0.2,<2.1.0)", "mistletoe (>=0.8.1,<0.9.0)", "markdown (>=3.3.6,<3.4.0)", "commonmark (>=0.9.1,<0.10.0)"]
-code_style = ["pre-commit (==2.6)"]
-benchmarking = ["pytest-benchmark (>=3.2,<4.0)", "pytest", "psutil"]
-
-[[package]]
-name = "markupsafe"
-version = "2.1.2"
-description = "Safely add untrusted strings to HTML/XML markup."
-category = "main"
-optional = false
-python-versions = ">=3.7"
 
 [[package]]
 name = "matplotlib"
@@ -918,14 +653,6 @@ python-versions = ">=3.5"
 traitlets = "*"
 
 [[package]]
-name = "mdurl"
-version = "0.1.2"
-description = "Markdown URL utilities"
-category = "dev"
-optional = false
-python-versions = ">=3.7"
-
-[[package]]
 name = "ml-collections"
 version = "0.1.0"
 description = "ML Collections is a library of Python collections designed for ML usecases."
@@ -949,11 +676,11 @@ python-versions = "^3.9"
 develop = false
 
 [package.dependencies]
-clu = "^0.0.8"
 equinox = "^0.9.2"
 jax = "^0.4.4"
 jaxlib = "^0.4.4"
 matplotlib = "^3.7.0"
+ml-collections = "^0.1.0"
 pandas = "^1.5.3"
 tensorboardX = "^2.6"
 
@@ -961,15 +688,7 @@ tensorboardX = "^2.6"
 type = "git"
 url = "https://github.com/vdutor/ml-tools"
 reference = "main"
-resolved_reference = "f15b0b1a924b7fba66642deb8682295762ec820f"
-
-[[package]]
-name = "msgpack"
-version = "1.0.4"
-description = "MessagePack serializer"
-category = "dev"
-optional = false
-python-versions = "*"
+resolved_reference = "e42718fc589fe04c9fa6c4f285e503efa274dc7a"
 
 [[package]]
 name = "mslex"
@@ -1004,19 +723,6 @@ optional = false
 python-versions = ">=3.8"
 
 [[package]]
-name = "oauthlib"
-version = "3.2.2"
-description = "A generic, spec-compliant, thorough implementation of the OAuth request-signing logic"
-category = "main"
-optional = false
-python-versions = ">=3.6"
-
-[package.extras]
-rsa = ["cryptography (>=3.0.0)"]
-signals = ["blinker (>=1.4.0)"]
-signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
-
-[[package]]
 name = "opt-einsum"
 version = "3.3.0"
 description = "Optimizing numpys einsum function"
@@ -1046,29 +752,6 @@ jax = ">=0.1.55"
 jaxlib = ">=0.1.37"
 numpy = ">=1.18.0"
 typing-extensions = ">=3.10.0"
-
-[[package]]
-name = "orbax"
-version = "0.1.2"
-description = "Orbax"
-category = "dev"
-optional = false
-python-versions = ">=3.8"
-
-[package.dependencies]
-absl-py = "*"
-cached_property = "*"
-etils = "*"
-flax = "*"
-importlib_resources = "*"
-jax = "*"
-jaxlib = "*"
-numpy = "*"
-pyyaml = "*"
-tensorstore = ">=0.1.20"
-
-[package.extras]
-dev = ["pytest", "pytest-xdist"]
 
 [[package]]
 name = "packaging"
@@ -1187,7 +870,7 @@ wcwidth = "*"
 name = "protobuf"
 version = "3.19.6"
 description = "Protocol Buffers"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.5"
 
@@ -1220,25 +903,6 @@ python-versions = "*"
 
 [package.extras]
 tests = ["pytest"]
-
-[[package]]
-name = "pyasn1"
-version = "0.4.8"
-description = "ASN.1 types and codecs"
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "pyasn1-modules"
-version = "0.2.8"
-description = "A collection of ASN.1-based protocols modules."
-category = "main"
-optional = false
-python-versions = "*"
-
-[package.dependencies]
-pyasn1 = ">=0.4.6,<0.5.0"
 
 [[package]]
 name = "pycparser"
@@ -1337,65 +1001,6 @@ python-versions = ">=3.6"
 cffi = {version = "*", markers = "implementation_name == \"pypy\""}
 
 [[package]]
-name = "requests"
-version = "2.28.2"
-description = "Python HTTP for Humans."
-category = "main"
-optional = false
-python-versions = ">=3.7, <4"
-
-[package.dependencies]
-certifi = ">=2017.4.17"
-charset-normalizer = ">=2,<4"
-idna = ">=2.5,<4"
-urllib3 = ">=1.21.1,<1.27"
-
-[package.extras]
-socks = ["PySocks (>=1.5.6,!=1.5.7)"]
-use_chardet_on_py3 = ["chardet (>=3.0.2,<6)"]
-
-[[package]]
-name = "requests-oauthlib"
-version = "1.3.1"
-description = "OAuthlib authentication support for Requests."
-category = "main"
-optional = false
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-
-[package.dependencies]
-oauthlib = ">=3.0.0"
-requests = ">=2.0.0"
-
-[package.extras]
-rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
-
-[[package]]
-name = "rich"
-version = "13.3.1"
-description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
-category = "dev"
-optional = false
-python-versions = ">=3.7.0"
-
-[package.dependencies]
-markdown-it-py = ">=2.1.0,<3.0.0"
-pygments = ">=2.14.0,<3.0.0"
-
-[package.extras]
-jupyter = ["ipywidgets (>=7.5.1,<9)"]
-
-[[package]]
-name = "rsa"
-version = "4.9"
-description = "Pure-Python RSA implementation"
-category = "main"
-optional = false
-python-versions = ">=3.6,<4"
-
-[package.dependencies]
-pyasn1 = ">=0.1.3"
-
-[[package]]
 name = "ruff"
 version = "0.0.247"
 description = "An extremely fast Python linter, written in Rust."
@@ -1475,43 +1080,6 @@ psutil = ">=5.7.2,<6.0.0"
 tomli = {version = ">=2.0.1,<3.0.0", markers = "python_version >= \"3.7\" and python_version < \"4.0\""}
 
 [[package]]
-name = "tensorboard"
-version = "2.11.2"
-description = "TensorBoard lets you watch Tensors Flow"
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-absl-py = ">=0.4"
-google-auth = ">=1.6.3,<3"
-google-auth-oauthlib = ">=0.4.1,<0.5"
-grpcio = ">=1.24.3"
-markdown = ">=2.6.8"
-numpy = ">=1.12.0"
-protobuf = ">=3.9.2,<4"
-requests = ">=2.21.0,<3"
-tensorboard-data-server = ">=0.6.0,<0.7.0"
-tensorboard-plugin-wit = ">=1.6.0"
-werkzeug = ">=1.0.1"
-
-[[package]]
-name = "tensorboard-data-server"
-version = "0.6.1"
-description = "Fast data loading for TensorBoard"
-category = "main"
-optional = false
-python-versions = ">=3.6"
-
-[[package]]
-name = "tensorboard-plugin-wit"
-version = "1.8.1"
-description = "What-If Tool TensorBoard plugin."
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
 name = "tensorboardx"
 version = "2.6"
 description = "TensorBoardX lets you watch Tensors Flow without Tensorflow"
@@ -1523,59 +1091,6 @@ python-versions = "*"
 numpy = "*"
 packaging = "*"
 protobuf = ">=3.8.0,<4"
-
-[[package]]
-name = "tensorflow-cpu"
-version = "2.11.0"
-description = "TensorFlow is an open source machine learning framework for everyone."
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-absl-py = ">=1.0.0"
-astunparse = ">=1.6.0"
-flatbuffers = ">=2.0"
-gast = ">=0.2.1,<=0.4.0"
-google-pasta = ">=0.1.1"
-grpcio = ">=1.24.3,<2.0"
-h5py = ">=2.9.0"
-keras = ">=2.11.0,<2.12"
-libclang = ">=13.0.0"
-numpy = ">=1.20"
-opt-einsum = ">=2.3.2"
-packaging = "*"
-protobuf = ">=3.9.2,<3.20"
-six = ">=1.12.0"
-tensorboard = ">=2.11,<2.12"
-tensorflow-estimator = ">=2.11.0,<2.12"
-tensorflow-io-gcs-filesystem = {version = ">=0.23.1", markers = "platform_machine != \"arm64\" or platform_system != \"Darwin\""}
-termcolor = ">=1.1.0"
-typing-extensions = ">=3.6.6"
-wrapt = ">=1.11.0"
-
-[[package]]
-name = "tensorflow-estimator"
-version = "2.11.0"
-description = "TensorFlow Estimator."
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[[package]]
-name = "tensorflow-io-gcs-filesystem"
-version = "0.30.0"
-description = "TensorFlow IO"
-category = "main"
-optional = false
-python-versions = ">=3.7, <3.12"
-
-[package.extras]
-tensorflow = ["tensorflow (>=2.11.0,<2.12.0)"]
-tensorflow-aarch64 = ["tensorflow-aarch64 (>=2.11.0,<2.12.0)"]
-tensorflow-cpu = ["tensorflow-cpu (>=2.11.0,<2.12.0)"]
-tensorflow-gpu = ["tensorflow-gpu (>=2.11.0,<2.12.0)"]
-tensorflow-rocm = ["tensorflow-rocm (>=2.11.0,<2.12.0)"]
 
 [[package]]
 name = "tensorflow-probability"
@@ -1597,28 +1112,6 @@ six = ">=1.10.0"
 [package.extras]
 jax = ["jax", "jaxlib"]
 tfds = ["tensorflow-datasets (>=2.2.0)"]
-
-[[package]]
-name = "tensorstore"
-version = "0.1.32"
-description = "Read and write large, multi-dimensional arrays"
-category = "dev"
-optional = false
-python-versions = ">=3.8"
-
-[package.dependencies]
-numpy = ">=1.16.0"
-
-[[package]]
-name = "termcolor"
-version = "2.2.0"
-description = "ANSI color formatting for output in terminal"
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.extras]
-tests = ["pytest", "pytest-cov"]
 
 [[package]]
 name = "tomli"
@@ -1694,19 +1187,6 @@ optional = false
 python-versions = ">=3.7"
 
 [[package]]
-name = "urllib3"
-version = "1.26.14"
-description = "HTTP library with thread-safe connection pooling, file post, and more."
-category = "main"
-optional = false
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*"
-
-[package.extras]
-brotli = ["brotlicffi (>=0.8.0)", "brotli (>=1.0.9)", "brotlipy (>=0.6.0)"]
-secure = ["pyOpenSSL (>=0.14)", "cryptography (>=1.3.4)", "idna (>=2.0.0)", "certifi", "urllib3-secure-extra", "ipaddress"]
-socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
-
-[[package]]
 name = "wcwidth"
 version = "0.2.6"
 description = "Measures the displayed width of unicode strings in a terminal"
@@ -1715,32 +1195,10 @@ optional = false
 python-versions = "*"
 
 [[package]]
-name = "werkzeug"
-version = "2.2.3"
-description = "The comprehensive WSGI web application library."
-category = "main"
-optional = false
-python-versions = ">=3.7"
-
-[package.dependencies]
-MarkupSafe = ">=2.1.1"
-
-[package.extras]
-watchdog = ["watchdog"]
-
-[[package]]
-name = "wrapt"
-version = "1.14.1"
-description = "Module for decorators, wrappers and monkey patching."
-category = "main"
-optional = false
-python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,>=2.7"
-
-[[package]]
 name = "zipp"
 version = "3.13.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
-category = "main"
+category = "dev"
 optional = false
 python-versions = ">=3.7"
 
@@ -1751,26 +1209,20 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "flake8 (<5)", "pytest-co
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9,<3.11"
-content-hash = "6d6eb9387bf568bedc011f5ffca9f73de9ef170c4ba70a95d18c5ce1eb4e4741"
+content-hash = "29c4577e8b4ca6bb2eb639cde8c39cfa4f4ee798b5e3d9bf15a1098fc498e6f0"
 
 [metadata.files]
 absl-py = []
 appnope = []
 asttokens = []
-astunparse = []
 attrs = []
 backcall = []
 black = []
-cached-property = []
-cachetools = []
-certifi = []
 cffi = []
-charset-normalizer = []
 check-shapes = []
 chex = []
 click = []
 cloudpickle = []
-clu = []
 colorama = []
 comm = []
 contextlib2 = []
@@ -1784,19 +1236,10 @@ distrax = []
 dm-tree = []
 einops = []
 equinox = []
-etils = []
 exceptiongroup = []
 executing = []
-flatbuffers = []
-flax = []
 fonttools = []
 gast = []
-google-auth = []
-google-auth-oauthlib = []
-google-pasta = []
-grpcio = []
-h5py = []
-idna = []
 importlib-metadata = []
 importlib-resources = []
 iniconfig = []
@@ -1812,27 +1255,18 @@ jaxutils = []
 jedi = []
 jupyter-client = []
 jupyter-core = []
-keras = []
 kiwisolver = []
 lark = []
-libclang = []
-markdown = []
-markdown-it-py = []
-markupsafe = []
 matplotlib = []
 matplotlib-inline = []
-mdurl = []
 ml-collections = []
 ml-tools = []
-msgpack = []
 mslex = []
 mypy-extensions = []
 nest-asyncio = []
 numpy = []
-oauthlib = []
 opt-einsum = []
 optax = []
-orbax = []
 packaging = []
 pandas = []
 parso = []
@@ -1847,8 +1281,6 @@ protobuf = []
 psutil = []
 ptyprocess = []
 pure-eval = []
-pyasn1 = []
-pyasn1-modules = []
 pycparser = []
 pygments = []
 pyparsing = []
@@ -1858,26 +1290,14 @@ pytz = []
 pywin32 = []
 pyyaml = []
 pyzmq = []
-requests = []
-requests-oauthlib = []
-rich = []
-rsa = []
 ruff = []
 scipy = []
 setuptools-scm = []
 six = []
 stack-data = []
 taskipy = []
-tensorboard = []
-tensorboard-data-server = []
-tensorboard-plugin-wit = []
 tensorboardx = []
-tensorflow-cpu = []
-tensorflow-estimator = []
-tensorflow-io-gcs-filesystem = []
 tensorflow-probability = []
-tensorstore = []
-termcolor = []
 tomli = []
 toolz = []
 tornado = []
@@ -1885,8 +1305,5 @@ tqdm = []
 traitlets = []
 typeguard = []
 typing-extensions = []
-urllib3 = []
 wcwidth = []
-werkzeug = []
-wrapt = []
 zipp = []
