@@ -7,8 +7,10 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from check_shapes import check_shape as cs
-from check_shapes import check_shapes, inherit_check_shapes
+from check_shapes import check_shapes
 from einops import reduce
+
+from .types import RNGKey
 
 
 @check_shapes(
@@ -104,7 +106,7 @@ class BiDimensionalAttentionScoreModel(eqx.Module):
         num_heads: int,
         output_dim: int = 1,
         *,
-        key: "jax.random.PRNGKey",
+        key: RNGKey,
     ) -> None:
         super().__init__()
         self.num_bidim_attention_blocks = num_bidim_attention_blocks
@@ -149,15 +151,22 @@ class BiDimensionalAttentionScoreModel(eqx.Module):
         y = jnp.repeat(jnp.expand_dims(y, axis=-1), num_x_dims, axis=2)
         return jnp.concatenate([x, y], axis=-1)
 
-    @inherit_check_shapes
+    @check_shapes(
+        "t: [batch_size]",
+        "yt: [batch_size, num_points, output_dim]",
+        "x: [batch_size, num_points, input_dim]",
+        "return: [batch_size, num_points, output_dim]",
+    )
     def __call__(
-        self, outputs: jnp.ndarray, inputs: jnp.ndarray, timesteps: jnp.ndarray, *, key
+        self,
+        t,
+        yt: jnp.ndarray,
+        x: jnp.ndarray,
+        *,
+        key: RNGKey,
     ) -> jnp.ndarray:
-        """
-        Computes the additive noise that was added to `y_0` to obtain `y_t`
-        based on `x_t` and `y_t` and `t`
-        """
-        x = cs(self.process_inputs(inputs, outputs), "[batch_size, num_points, input_dim, 2]")
+        """Network to estimate score."""
+        x = cs(self.process_inputs(x, yt), "[batch_size, num_points, input_dim, 2]")
 
         x = cs(
             jax.vmap(jax.vmap(jax.vmap(self.linear_embedding)))(x),
@@ -165,7 +174,7 @@ class BiDimensionalAttentionScoreModel(eqx.Module):
         )
         x = jax.nn.gelu(x)
 
-        t_embedding = timestep_embedding(timesteps, self.hidden_dim)
+        t_embedding = timestep_embedding(t, self.hidden_dim)
 
         skip = None
         for layer in self.bidim_attention_blocks:
