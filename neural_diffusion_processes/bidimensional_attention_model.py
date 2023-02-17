@@ -1,14 +1,14 @@
 from __future__ import annotations
-from typing import Tuple
-from dataclasses import dataclass
 
 import math
-import equinox as eqx
-from einops import reduce
-from check_shapes import check_shape as cs, check_shapes, inherit_check_shapes
+from typing import Tuple
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
+from check_shapes import check_shape as cs
+from check_shapes import check_shapes, inherit_check_shapes
+from einops import reduce
 
 
 @check_shapes(
@@ -35,6 +35,7 @@ class BiDimensionalAttentionBlock(eqx.Module):
      - applies attention across datapoints,
      - applies attention across input dimensions.
     """
+
     linear_time: eqx.nn.Linear
     attention_n: eqx.nn.MultiheadAttention
     attention_d: eqx.nn.MultiheadAttention
@@ -48,16 +49,10 @@ class BiDimensionalAttentionBlock(eqx.Module):
         keys = jax.random.split(key, num=3)
         self.linear_time = eqx.nn.Linear(hidden_dim, hidden_dim, key=keys[0])
         self.attention_n = eqx.nn.MultiheadAttention(
-            num_heads,
-            query_size=hidden_dim,
-            output_size=2*hidden_dim,
-            key=keys[1]
+            num_heads, query_size=hidden_dim, output_size=2 * hidden_dim, key=keys[1]
         )
         self.attention_d = eqx.nn.MultiheadAttention(
-            num_heads,
-            query_size=hidden_dim,
-            output_size=2*hidden_dim,
-            key=keys[2]
+            num_heads, query_size=hidden_dim, output_size=2 * hidden_dim, key=keys[2]
         )
 
     @check_shapes(
@@ -95,15 +90,22 @@ class BiDimensionalAttentionScoreModel(eqx.Module):
     linear_embedding: eqx.nn.Linear
     linear_hidden: eqx.nn.Linear
     linear_output: eqx.nn.Linear
-    bidim_attention_blocks: list # List[BiDimensionalAttentionBlock]
+    bidim_attention_blocks: list  # List[BiDimensionalAttentionBlock]
 
     num_bidim_attention_blocks: int = eqx.static_field()
     hidden_dim: int = eqx.static_field()
     num_heads: int = eqx.static_field()
     output_dim: int = eqx.static_field()
 
-
-    def __init__(self, num_bidim_attention_blocks: int, hidden_dim: int, num_heads: int, output_dim: int = 1, *, key: "jax.random.PRNGKey") -> None:
+    def __init__(
+        self,
+        num_bidim_attention_blocks: int,
+        hidden_dim: int,
+        num_heads: int,
+        output_dim: int = 1,
+        *,
+        key: "jax.random.PRNGKey",
+    ) -> None:
         super().__init__()
         self.num_bidim_attention_blocks = num_bidim_attention_blocks
         self.hidden_dim = hidden_dim
@@ -115,11 +117,17 @@ class BiDimensionalAttentionScoreModel(eqx.Module):
         self.bidim_attention_blocks = []
         for _ in range(self.num_bidim_attention_blocks):
             key, subkey = jax.random.split(key)
-            self.bidim_attention_blocks.append(BiDimensionalAttentionBlock(self.hidden_dim, self.num_heads, key=subkey))
+            self.bidim_attention_blocks.append(
+                BiDimensionalAttentionBlock(self.hidden_dim, self.num_heads, key=subkey)
+            )
 
         key, o1key, o2key = jax.random.split(key, 3)
-        self.linear_hidden = eqx.nn.Linear(in_features=self.hidden_dim, out_features=self.hidden_dim, key=o1key)
-        self.linear_output = eqx.nn.Linear(in_features=self.hidden_dim, out_features=self.output_dim, use_bias=False, key=o2key)
+        self.linear_hidden = eqx.nn.Linear(
+            in_features=self.hidden_dim, out_features=self.hidden_dim, key=o1key
+        )
+        self.linear_output = eqx.nn.Linear(
+            in_features=self.hidden_dim, out_features=self.output_dim, use_bias=False, key=o2key
+        )
         # Init weights to zero
         # self.linear_output = eqx.tree_at(
         #     lambda layer: layer.weight,
@@ -142,14 +150,19 @@ class BiDimensionalAttentionScoreModel(eqx.Module):
         return jnp.concatenate([x, y], axis=-1)
 
     @inherit_check_shapes
-    def __call__(self, outputs: jnp.ndarray, inputs: jnp.ndarray, timesteps: jnp.ndarray, *, key) -> jnp.ndarray:
+    def __call__(
+        self, outputs: jnp.ndarray, inputs: jnp.ndarray, timesteps: jnp.ndarray, *, key
+    ) -> jnp.ndarray:
         """
         Computes the additive noise that was added to `y_0` to obtain `y_t`
         based on `x_t` and `y_t` and `t`
         """
         x = cs(self.process_inputs(inputs, outputs), "[batch_size, num_points, input_dim, 2]")
 
-        x = cs(jax.vmap(jax.vmap(jax.vmap(self.linear_embedding)))(x), "[batch_size, num_points, input_dim, hidden_dim]")
+        x = cs(
+            jax.vmap(jax.vmap(jax.vmap(self.linear_embedding)))(x),
+            "[batch_size, num_points, input_dim, hidden_dim]",
+        )
         x = jax.nn.gelu(x)
 
         t_embedding = timestep_embedding(timesteps, self.hidden_dim)
