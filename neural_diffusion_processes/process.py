@@ -71,6 +71,22 @@ class GaussianDiffusion:
         b = beta_t / jnp.sqrt(1.0 - alpha_bar_t)
         yt_minus_one = a * (yt - b * noise) + jnp.sqrt(beta_t) * z
         return yt_minus_one
+    
+    def ddpm_backward_mean_var(
+        self,
+        noise: ndarray,
+        yt: ndarray,
+        t: ndarray
+    ) -> ndarray:
+        beta_t = expand_to(self.betas[t], yt)
+        alpha_t = expand_to(self.alphas[t], yt)
+        alpha_bar_t = expand_to(self.alpha_bars[t], yt)
+
+        a = 1.0 / jnp.sqrt(alpha_t)
+        b = beta_t / jnp.sqrt(1.0 - alpha_bar_t)
+        m = a * (yt - b * noise)
+        v = beta_t * jnp.ones_like(yt) * (t > 0)
+        return m, v
 
     def sample(self, key, x, mask, *, model_fn: EpsModel, output_dim: int = 1):
         key, ykey = jax.random.split(key)
@@ -92,7 +108,17 @@ class GaussianDiffusion:
         yf, yt = jax.lax.scan(scan_fn, yT, (ts, keys))
         return yt if yt is not None else yf
     
-    def conditional_sample(self, key, x, mask, *, x_context, y_context, mask_context, model_fn: EpsModel):
+    def conditional_sample(
+            self,
+            key,
+            x,
+            mask, *,
+            x_context,
+            y_context,
+            mask_context,
+            model_fn: EpsModel,
+            num_innner_steps: int = 5,
+        ):
 
         if mask is None:
             mask = jnp.zeros_like(x[:, 0])
@@ -105,17 +131,36 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        # def inner(y, inputs):
+        g = 1. / len(self.betas)
+
+        @jax.jit
+        def langevin(y, inputs):
+            t, key = inputs
+            ykey, mkey, rkey, zkey = jax.random.split(key, 4)
+            yt_context = self.forward(ykey, y_context, t)[0]
+            y_augmented = jnp.concatenate([yt_context, y], axis=0)
+            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
+            m, v = self.ddpm_backward_mean_var(noise=noise_hat, yt=y_augmented, t=t)
+            s = - v * (y_augmented - m)
+            y = y_augmented + 0.5 * g * s + g **.5 * jax.random.normal(zkey, shape=s.shape)
+            return y[num_context:], None
+
 
         @jax.jit
         def outer(yt_target, inputs):
             t, key = inputs
-            ykey, mkey, rkey = jax.random.split(key, 3)
+            ykey, mkey, rkey, lkey = jax.random.split(key, 4)
             yt_context = self.forward(ykey, y_context, t)[0]
             y_augmented = jnp.concatenate([yt_context, yt_target], axis=0)
             noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
             y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y_augmented, t=t)
-            return y[num_context:], None
+
+            y = y[num_context:]
+            ts = jnp.ones((num_innner_steps,), dtype=jnp.int32) * (t - 1)
+            keys = jax.random.split(lkey, num_innner_steps)
+            y, _ = jax.lax.scan(langevin, y, (ts, keys))
+
+            return y, None
 
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))

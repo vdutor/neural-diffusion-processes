@@ -25,7 +25,8 @@ from neural_diffusion_processes.types import Dataset, Batch, Rng
 from neural_diffusion_processes.model import BiDimensionalAttentionModel
 from neural_diffusion_processes.process import cosine_schedule, GaussianDiffusion
 from neural_diffusion_processes.utils.config import setup_config
-from neural_diffusion_processes.utils.state import TrainingState, save_checkpoint
+from neural_diffusion_processes.utils.state import TrainingState
+from neural_diffusion_processes.utils import state as state_utils
 from neural_diffusion_processes.utils import writers
 from neural_diffusion_processes.utils import actions
 from config import Config
@@ -231,6 +232,15 @@ def plots(state: TrainingState, key: Rng):
 
 state = init(batch0, jax.random.PRNGKey(config.seed))
 
+experiment_dir_if_exists = pathlib.Path(config.restore)
+if (experiment_dir_if_exists / "checkpoints").exists():
+    index = state_utils.find_latest_checkpoint_step_index(str(experiment_dir_if_exists))
+    if index is not None:
+        state = state_utils.load_checkpoint(state, str(experiment_dir_if_exists), step_index=index)
+        print("Restored checkpoint at step {}".format(state.step))
+else:
+    print("Training new model")
+    
 
 exp_root_dir = get_experiment_dir(config)
 local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
@@ -252,7 +262,7 @@ actions = [
     ),
     actions.PeriodicCallback(
         every_steps=config.total_steps // 2,
-        callback_fn=lambda step, t, **kwargs: save_checkpoint(kwargs["state"], exp_root_dir, step)
+        callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
     ),
     # ml_tools.actions.PeriodicCallback(
     #     every_steps=None if is_smoketest(config) else num_steps // 4,
@@ -262,11 +272,17 @@ actions = [
     # ),
 ]
 
+print(state.step)
+print(config.total_steps)
+progress_bar = tqdm.tqdm(list(range(state.step, config.total_steps + 1)), miniters=1)
+print(progress_bar)
+print(len(progress_bar))
+exit(0)
 
-progress_bar = tqdm.tqdm(list(range(1, config.total_steps + 1)), miniters=1)
-
-for step, batch in zip(progress_bar, ds_train):
+for step in progress_bar:
     if step < state.step: continue  # wait for the state to catch up in case of restarts
+
+    batch = next(ds_train)
 
     state, metrics = update_step(state, batch)
     metrics["lr"] = learning_rate_schedule(state.step)
@@ -276,3 +292,6 @@ for step, batch in zip(progress_bar, ds_train):
 
     if step % 100 == 0:
         progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+    
+
+print("Done!")
