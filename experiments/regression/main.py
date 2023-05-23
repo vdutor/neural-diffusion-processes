@@ -1,15 +1,21 @@
 from typing import Mapping, Tuple
 import os
+import string
+import random
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import datetime
+import pathlib
 import jax
 import haiku as hk
 import jax.numpy as jnp
+import tqdm
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import optax
 from functools import partial
+from dataclasses import asdict
 
 # Disable all GPUs for TensorFlow. Load data using CPU.
 tf.config.set_visible_devices([], 'GPU')
@@ -21,8 +27,42 @@ from neural_diffusion_processes.model import BiDimensionalAttentionModel
 from neural_diffusion_processes.process import cosine_schedule, GaussianDiffusion
 from neural_diffusion_processes.utils.config import setup_config
 from neural_diffusion_processes.utils.state import TrainingState
+from neural_diffusion_processes.utils import writers
+from neural_diffusion_processes.utils import actions
 from config import Config
 
+
+EXPERIMENT = "regression-May23"
+DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
+HERE = pathlib.Path(__file__).parent
+LOG_DIR = 'logs'
+
+
+def get_experiment_name(config: Config):
+    del config  # Currently not used but name could be based on config
+    letters = string.ascii_lowercase
+    id = ''.join(random.choice(letters) for i in range(4))
+    return f"{DATETIME}_{id}"
+
+
+def get_experiment_dir(config: Config, output: str = "root", exist_ok: bool = True) -> pathlib.Path:
+    experiment_name = get_experiment_name(config)
+    root = HERE / LOG_DIR / EXPERIMENT / experiment_name
+
+    if output == "root":
+        dir_ = root
+    elif output == "plots":
+        dir_ = root / "plots"
+    elif output == "tensorboard":
+        # All tensorboard logs are stored in a single directory
+        # Run tensorboard with:
+        # tensorboard --logdir logs/{EXPERIMENT-NAME}/tensorboard
+        dir_ = HERE / LOG_DIR / EXPERIMENT / "tensorboard" / experiment_name
+    else:
+        raise ValueError("Unknown output: %s" % output)
+
+    dir_.mkdir(parents=True, exist_ok=exist_ok)
+    return dir_
 
 
 def get_data(
@@ -55,25 +95,22 @@ ds_train: Dataset = get_data(
     config.dataset,
     input_dim=1,
     train=True,
-    batch_size=config.batch_size
+    batch_size=config.batch_size,
+    num_epochs=config.num_epochs,
 )
 batch0 = next(ds_train)
 key = jax.random.PRNGKey(config.seed)
 
 beta_t = cosine_schedule(config.diffusion.beta_start, config.diffusion.beta_end, config.diffusion.timesteps)
-ts = jnp.linspace(0, config.diffusion.timesteps, 4, dtype=jnp.int32)
-print(ts)
 process = GaussianDiffusion(beta_t)
-yts, _ = jax.vmap(lambda t: process.forward(key, batch0.y_target[0], t))(ts)
-print(yts.shape)
 
-fig, axes = plt.subplots(1, 4, figsize=(8, 2))
-for i, ax in enumerate(axes):
-    ax.plot(batch0.x_target[0], yts[i], "C0.", label="target")
-    # ax.plot(batch0.x_context[0], batch0.y_context[0], "C3.", label="context")
-    ax.set_title(f"t={ts[i]}")
+# yts, _ = jax.vmap(lambda t: process.forward(key, batch0.y_target[0], t))(ts)
+# fig, axes = plt.subplots(1, 4, figsize=(8, 2))
+# for i, ax in enumerate(axes):
+#     ax.plot(batch0.x_target[0], yts[i], "C0.", label="target")
+#     ax.set_title(f"t={ts[i]}")
+# plt.savefig("evolution.png")
 
-plt.savefig("evolution.png")
 
 @hk.without_apply_rng
 @hk.transform
@@ -160,14 +197,48 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
     return new_state, metrics
 
 state = init(batch0, jax.random.PRNGKey(config.seed))
-print(state)
 
-import tqdm
+
+exp_root_dir = get_experiment_dir(config)
+local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
+tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
+# aim_writer = writers.AimWriter(EXPERIMENT)
+writer = writers.MultiWriter([tb_writer, local_writer])
+writer.log_hparams(asdict(config))
+
+
+actions = [
+    actions.PeriodicCallback(
+        every_steps=10,
+        callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
+    ),
+    # ml_tools.actions.PeriodicCallback(
+    #     every_steps=None if is_smoketest(config) else num_steps // 4,
+    #     callback_fn=lambda step, t, **kwargs: [
+    #         cb(step, t, **kwargs) for cb in task_callbacks
+    #     ]
+    # ),
+    # ml_tools.actions.PeriodicCallback(
+    #     every_steps=num_steps//10,
+    #     callback_fn=lambda step, t, **kwargs: ml_tools.state.save_checkpoint(kwargs["state"], exp_root_dir, step)
+    # ),
+    # ml_tools.actions.PeriodicCallback(
+    #     every_steps=num_steps//4,
+    #     callback_fn=lambda step, t, **kwargs: writer.write_figures(step, callback_plot_prior(kwargs["state"], kwargs["key"]))
+    # )
+]
+
+
 progress_bar = tqdm.tqdm(list(range(1, config.total_steps + 1)), miniters=1)
 
 for step, batch in zip(progress_bar, ds_train):
+    if step < state.step: continue  # wait for the state to catch up in case of restarts
+
     state, metrics = update_step(state, batch)
-    metrics["lr"] = learning_rate_schedule(step)
+    metrics["lr"] = learning_rate_schedule(state.step)
+
+    for action in actions:
+        action(step, t=None, metrics=metrics, state=state, key=key)
 
     if step % 100 == 0:
         progress_bar.set_description(f"loss {metrics['loss']:.2f}")

@@ -118,11 +118,11 @@ def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, 
     else:
         raise ValueError(f"Unknown loss type {loss_type}")
 
-    @check_shapes("t: []", "y: [N, y_dim]", "x: [N, x_dim]", "mask: [N,] if mask", "return: []")
+    @check_shapes("t: []", "y: [N, y_dim]", "x: [N, x_dim]", "mask: [N,] if mask is not None", "return: []")
     def loss_fn(key, t, y, x, mask):
         yt, noise = process.forward(key, y, t)
         noise_hat = network(t, yt, x, mask, key=key)
-        l = jnp.sum(loss_metric(noise, noise_hat, axis=1))  # [N,]
+        l = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
         l = l * (1. - mask[:, None])
         num_points = len(mask) - jnp.count_nonzero(mask)
         return jnp.sum(l) / num_points
@@ -133,6 +133,7 @@ def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, 
     # Low-discrepancy sampling over t to reduce variance
     t = jax.random.uniform(tkey, (batch_size,), minval=0, maxval=num_timesteps / batch_size)
     t = t + (num_timesteps / batch_size) * jnp.arange(batch_size)
+    t = t.astype(jnp.int32)
 
     keys = jax.random.split(key, batch_size)
 

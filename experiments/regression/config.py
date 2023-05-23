@@ -30,7 +30,7 @@ class NetworkConfig:
 class Config:
     seed: int = 42
     batch_size: int = 32
-    epochs: int = 500
+    num_epochs: int = 500
     samples_per_epoch: int = int(2**14)
     loss_type: str = "l1"
     dataset: str = "se"
@@ -47,6 +47,6 @@ class Config:
 
     @property
     def total_steps(self) -> int:
-        return self.steps_per_epoch * self.epochs
+        return self.steps_per_epoch * self.num_epochs
 
 
