@@ -25,13 +25,14 @@ from neural_diffusion_processes.types import Dataset, Batch, Rng
 from neural_diffusion_processes.model import BiDimensionalAttentionModel
 from neural_diffusion_processes.process import cosine_schedule, GaussianDiffusion
 from neural_diffusion_processes.utils.config import setup_config
-from neural_diffusion_processes.utils.state import TrainingState
+from neural_diffusion_processes.utils.state import TrainingState, save_checkpoint
 from neural_diffusion_processes.utils import writers
 from neural_diffusion_processes.utils import actions
 from config import Config
 
 
 EXPERIMENT = "regression-May23"
+EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
 LOG_DIR = 'logs'
@@ -39,9 +40,15 @@ LOG_DIR = 'logs'
 
 def get_experiment_name(config: Config):
     del config  # Currently not used but name could be based on config
-    letters = string.ascii_lowercase
-    id = ''.join(random.choice(letters) for i in range(4))
-    return f"{DATETIME}_{id}"
+    global EXPERIMENT_NAME
+
+    if EXPERIMENT_NAME is None:
+        letters = string.ascii_lowercase
+        id = ''.join(random.choice(letters) for i in range(4))
+        EXPERIMENT_NAME = f"{DATETIME}_{id}"
+    
+    return EXPERIMENT_NAME
+    
 
 
 def get_experiment_dir(config: Config, output: str = "root", exist_ok: bool = True) -> pathlib.Path:
@@ -193,18 +200,33 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
 def sample_prior(state: TrainingState, key: Rng):
     print("compiling sample_prior")
     x = jnp.linspace(-2, 2, 60)[:, None]
-    key, ykey, bkey  = jax.random.split(key, 3)
-    yT = jax.random.normal(ykey, (len(x), 1))
     net_with_params = partial(net, state.params_ema)
-    y0 = process.sample(bkey, yT, x, mask=None, model_fn=net_with_params)
+    y0 = process.sample(key, x, mask=None, model_fn=net_with_params)
     return x, y0
 
 
-def plot_prior(state: TrainingState, key: Rng):
-    fig, ax = plt.subplots()
+@jax.jit
+def sample_conditional(state: TrainingState, key: Rng):
+    x = jnp.linspace(-2, 2, 57)[:, None]
+    xc = jnp.array([-1., 0., 1.]).reshape(-1, 1)
+    yc = jnp.array([0., -1., 1.]).reshape(-1, 1)
+    net_with_params = partial(net, state.params_ema)
+    y0 = process.conditional_sample(key, x, mask=None, x_context=xc, y_context=yc, mask_context=None, model_fn=net_with_params)
+    return x, y0, xc, yc
+
+
+def plots(state: TrainingState, key: Rng):
+    # prior
+    fig_prior, ax = plt.subplots()
     x, y0 = jax.vmap(lambda k: sample_prior(state, k))(jax.random.split(key, 10))
     ax.plot(x[...,0].T, y0[...,0].T, color="C0", alpha=0.5)
-    return {"prior": fig}
+
+    # conditional
+    fig_cond, ax = plt.subplots()
+    x, y0, xc, yc = jax.vmap(lambda k: sample_conditional(state, k))(jax.random.split(key, 10))
+    ax.plot(x[...,0].T, y0[...,0].T, "C0", alpha=0.5)
+    ax.plot(xc[...,0].T, yc[...,0].T, "C3o")
+    return {"prior": fig_prior, "conditional": fig_cond}
 
 
 state = init(batch0, jax.random.PRNGKey(config.seed))
@@ -224,18 +246,19 @@ actions = [
         callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
     ),
     actions.PeriodicCallback(
-        every_steps=config.total_steps // 5,
-        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_prior(kwargs["state"], kwargs["key"]))
-    )
+        # every_steps=config.total_steps // 20,
+        every_steps=config.steps_per_epoch,
+        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
+    ),
+    actions.PeriodicCallback(
+        every_steps=config.total_steps // 2,
+        callback_fn=lambda step, t, **kwargs: save_checkpoint(kwargs["state"], exp_root_dir, step)
+    ),
     # ml_tools.actions.PeriodicCallback(
     #     every_steps=None if is_smoketest(config) else num_steps // 4,
     #     callback_fn=lambda step, t, **kwargs: [
     #         cb(step, t, **kwargs) for cb in task_callbacks
     #     ]
-    # ),
-    # ml_tools.actions.PeriodicCallback(
-    #     every_steps=num_steps//10,
-    #     callback_fn=lambda step, t, **kwargs: ml_tools.state.save_checkpoint(kwargs["state"], exp_root_dir, step)
     # ),
 ]
 
