@@ -7,7 +7,7 @@ class DiffusionConfig:
     schedule: str = "cosine"
     beta_start: float = 3e-4
     beta_end: float = 0.5
-    timesteps: int = 1_000
+    timesteps: int = 500
 
 
 @dataclass
@@ -34,8 +34,6 @@ class Config:
     samples_per_epoch: int = int(2**14)
     loss_type: str = "l1"
     dataset: str = "se"
-    eval_every: int = 2000
-    log_every: int = 200
     network: NetworkConfig = NetworkConfig()
     schedule: DiffusionConfig = DiffusionConfig()
     diffusion: DiffusionConfig = DiffusionConfig()

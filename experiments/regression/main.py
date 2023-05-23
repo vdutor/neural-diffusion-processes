@@ -2,7 +2,6 @@ from typing import Mapping, Tuple
 import os
 import string
 import random
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import datetime
 import pathlib
 import jax
@@ -104,13 +103,6 @@ key = jax.random.PRNGKey(config.seed)
 beta_t = cosine_schedule(config.diffusion.beta_start, config.diffusion.beta_end, config.diffusion.timesteps)
 process = GaussianDiffusion(beta_t)
 
-# yts, _ = jax.vmap(lambda t: process.forward(key, batch0.y_target[0], t))(ts)
-# fig, axes = plt.subplots(1, 4, figsize=(8, 2))
-# for i, ax in enumerate(axes):
-#     ax.plot(batch0.x_target[0], yts[i], "C0.", label="target")
-#     ax.set_title(f"t={ts[i]}")
-# plt.savefig("evolution.png")
-
 
 @hk.without_apply_rng
 @hk.transform
@@ -196,6 +188,25 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
     }
     return new_state, metrics
 
+
+@jax.jit
+def sample_prior(state: TrainingState, key: Rng):
+    print("compiling sample_prior")
+    x = jnp.linspace(-2, 2, 60)[:, None]
+    key, ykey, bkey  = jax.random.split(key, 3)
+    yT = jax.random.normal(ykey, (len(x), 1))
+    net_with_params = partial(net, state.params_ema)
+    y0 = process.sample(bkey, yT, x, mask=None, model_fn=net_with_params)
+    return x, y0
+
+
+def plot_prior(state: TrainingState, key: Rng):
+    fig, ax = plt.subplots()
+    x, y0 = jax.vmap(lambda k: sample_prior(state, k))(jax.random.split(key, 10))
+    ax.plot(x[...,0].T, y0[...,0].T, color="C0", alpha=0.5)
+    return {"prior": fig}
+
+
 state = init(batch0, jax.random.PRNGKey(config.seed))
 
 
@@ -212,6 +223,10 @@ actions = [
         every_steps=10,
         callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
     ),
+    actions.PeriodicCallback(
+        every_steps=config.total_steps // 5,
+        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_prior(kwargs["state"], kwargs["key"]))
+    )
     # ml_tools.actions.PeriodicCallback(
     #     every_steps=None if is_smoketest(config) else num_steps // 4,
     #     callback_fn=lambda step, t, **kwargs: [
@@ -222,10 +237,6 @@ actions = [
     #     every_steps=num_steps//10,
     #     callback_fn=lambda step, t, **kwargs: ml_tools.state.save_checkpoint(kwargs["state"], exp_root_dir, step)
     # ),
-    # ml_tools.actions.PeriodicCallback(
-    #     every_steps=num_steps//4,
-    #     callback_fn=lambda step, t, **kwargs: writer.write_figures(step, callback_plot_prior(kwargs["state"], kwargs["key"]))
-    # )
 ]
 
 

@@ -46,7 +46,6 @@ class GaussianDiffusion:
         yt = jnp.sqrt(alpha_bars) * y0 + jnp.sqrt(1.0 - alpha_bars) * noise
         return yt, noise
 
-    @check_shapes("yt: [N, y_dim]", "t: []", "noise: [N, y_dim]", "return: [N, y_dim]")
     def ddpm_backward_step(
         self,
         key: Rng,
@@ -76,28 +75,37 @@ class GaussianDiffusion:
 
         yt = yT
 
-        for t in range(self.steps - 1, -1, -1):
+        step = jax.jit(self.ddpm_backward_step)
+
+        for t in range(len(self.betas) - 1, -1, -1):
             key, ekey, skey = jax.random.split(key, num=3)
             noise_hat = model_fn(t, yt, x, mask, key=ekey)
-            yt = self.ddpm_backward_step(skey, noise_hat, yt, t)
+            yt = step(skey, noise_hat, yt, t)
 
         return yt    
 
 
     # def sample(self, *, key, model_fn: EpsModel, y, t, x, return_all: bool = False):
-    #     keys = jax.random.split(key, len(t))
-    #     t = repeat(t, "t -> t b", b=y.shape[0])
+    def sample(self, key, yT, x, mask, *, model_fn: EpsModel):
+        print("compiling sample")
+        ts = jnp.arange(len(self.betas))[::-1]
+        keys = jax.random.split(key, len(ts))
+        # t = repeat(t, "t -> t b", b=y.shape[0])
 
-    #     def scan_fn(y, inputs):
-    #         t, key = inputs
-    #         mkey, rkey = jax.random.split(key)
-    #         noise_hat = model_fn(t, y, x, key=mkey)
-    #         y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y, t=t)
-    #         out = y if return_all else None
-    #         return y, out
+        if mask is None:
+            mask = jnp.zeros_like(x[:, 0])
 
-    #     yf, yt = jax.lax.scan(scan_fn, y, (t, keys))
-    #     return yt if yt is not None else yf
+        @jax.jit
+        def scan_fn(y, inputs):
+            print("compiling scan_fn")
+            t, key = inputs
+            mkey, rkey = jax.random.split(key)
+            noise_hat = model_fn(t, y, x, mask, key=mkey)
+            y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y, t=t)
+            return y, None
+
+        yf, yt = jax.lax.scan(scan_fn, yT, (ts, keys))
+        return yt if yt is not None else yf
 
 
 # GaussianDiffusion.forward = jax.jit(GaussianDiffusion.forward)
