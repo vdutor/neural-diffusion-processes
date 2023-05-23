@@ -86,6 +86,7 @@ class GaussianDiffusion:
         b = beta_t / jnp.sqrt(1.0 - alpha_bar_t)
         m = a * (yt - b * noise)
         v = beta_t * jnp.ones_like(yt) * (t > 0)
+        v = jnp.maximum(v, jnp.ones_like(v) * 1e-3)
         return m, v
 
     def sample(self, key, x, mask, *, model_fn: EpsModel, output_dim: int = 1):
@@ -117,7 +118,7 @@ class GaussianDiffusion:
             y_context,
             mask_context,
             model_fn: EpsModel,
-            num_innner_steps: int = 5,
+            num_innner_steps: int = 50,
         ):
 
         if mask is None:
@@ -131,17 +132,17 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        g = 1. / len(self.betas)
+        g = 1e-4
 
         @jax.jit
-        def langevin(y, inputs):
+        def inner(y, inputs):
             t, key = inputs
             ykey, mkey, rkey, zkey = jax.random.split(key, 4)
             yt_context = self.forward(ykey, y_context, t)[0]
             y_augmented = jnp.concatenate([yt_context, y], axis=0)
             noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
             m, v = self.ddpm_backward_mean_var(noise=noise_hat, yt=y_augmented, t=t)
-            s = - v * (y_augmented - m)
+            s = - v ** (-1) * (y_augmented - m)
             y = y_augmented + 0.5 * g * s + g **.5 * jax.random.normal(zkey, shape=s.shape)
             return y[num_context:], None
 
@@ -158,14 +159,14 @@ class GaussianDiffusion:
             y = y[num_context:]
             ts = jnp.ones((num_innner_steps,), dtype=jnp.int32) * (t - 1)
             keys = jax.random.split(lkey, num_innner_steps)
-            y, _ = jax.lax.scan(langevin, y, (ts, keys))
+            y, _ = jax.lax.scan(inner, y, (ts, keys))
 
             return y, None
 
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))
         yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
-        yf, yt = jax.lax.scan(outer, yT_target, (ts, keys))
+        yf, yt = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
         return yt if yt is not None else yf
 
 

@@ -29,6 +29,8 @@ from neural_diffusion_processes.utils.state import TrainingState
 from neural_diffusion_processes.utils import state as state_utils
 from neural_diffusion_processes.utils import writers
 from neural_diffusion_processes.utils import actions
+from neural_diffusion_processes.gp import predict
+
 from config import Config
 
 
@@ -98,6 +100,9 @@ def get_data(
 
 
 config: Config = setup_config(Config)
+
+
+
 ds_train: Dataset = get_data(
     config.dataset,
     input_dim=1,
@@ -272,12 +277,7 @@ actions = [
     # ),
 ]
 
-print(state.step)
-print(config.total_steps)
-progress_bar = tqdm.tqdm(list(range(state.step, config.total_steps + 1)), miniters=1)
-print(progress_bar)
-print(len(progress_bar))
-exit(0)
+progress_bar = tqdm.tqdm(list(range(state.step + 1, config.total_steps + 1)), miniters=1)
 
 for step in progress_bar:
     if step < state.step: continue  # wait for the state to catch up in case of restarts
@@ -294,4 +294,29 @@ for step in progress_bar:
         progress_bar.set_description(f"loss {metrics['loss']:.2f}")
     
 
-print("Done!")
+
+
+fig_cond, ax = plt.subplots()
+x, y0, xc, yc = jax.vmap(lambda k: sample_conditional(state, k))(jax.random.split(key, 5))
+ax.plot(x[...,0].T, y0[...,0].T, "C0", alpha=0.5)
+ax.plot(xc[...,0].T, yc[...,0].T, "C3.")
+
+from gpjax import Prior
+from data import _DATASET_FACTORIES
+
+gp = _DATASET_FACTORIES[config.dataset](list(range(1)))
+xx = np.linspace(-2, 2, 200)[None, :, None]
+post = predict(gp.prior, gp.params, (xc[0], yc[0]))(x[0])
+m, v = post.mean(), post.variance()
+print(m.shape)
+print(v.shape)
+
+s = post.sample(seed=key, sample_shape=(5,))
+s += gp.params["noise_variance"] ** 0.5 * np.random.randn(*s.shape)
+print(s.shape)
+ax.plot(x[0], m, "k", lw=2)
+ax.plot(x[0], s.T, "k", alpha=.3)
+ax.fill_between(x[0].ravel(), m - 2 * v, m + 2 * v, color="k", alpha=0.1)
+
+
+plt.savefig("conditional.png")

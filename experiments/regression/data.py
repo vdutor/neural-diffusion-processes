@@ -101,7 +101,8 @@ class GPFunctionalDistribution(FuntionalDistribution):
     
     def sample(self, key, x: Float[Array, "N D"]) -> Float[Array, "N 1"]:
         f = self.prior.predict(self.params)(x).sample(seed=key, sample_shape=()).reshape(x.shape[0], 1)
-        y = f + (jax.random.normal(key, shape=f.shape) * jnp.sqrt(self.params["noise_variance"]))
+        sigma2 = self.params["noise_variance"]
+        y = f + (jax.random.normal(key, shape=f.shape) * jnp.sqrt(sigma2))
         return y
 
 
@@ -119,34 +120,31 @@ def register_dataset_factory(name: str):
     
 @register_dataset_factory("se")
 def _se_dataset_factory(active_dim: List[int]):
-    rbf = jaxkern.stationary.RBF(active_dims=active_dim)
-    white = jaxkern.White(active_dims=active_dim)
-    kernel = jaxkern.SumKernel([rbf, white])
+    k = jaxkern.stationary.RBF(active_dims=active_dim)
+    # white = jaxkern.White(active_dims=active_dim)
+    # kernel = jaxkern.SumKernel([rbf, white])
     params = {
         "mean_function": {},
-        "kernel": [
-            {"lengthscale": _LENGTHSCALE, "variance": _KERNEL_VAR,},
-            {"variance": _NOISE_VAR,},
-        ],
-        "noise_variance": 0.0
+        "kernel": {"lengthscale": _LENGTHSCALE, "variance": _KERNEL_VAR,},
+            # {"variance": 0,},
+        # ],
+        "noise_variance": _NOISE_VAR
     }
-    return GPFunctionalDistribution(kernel, params)
+    return GPFunctionalDistribution(k, params)
 
 
 @register_dataset_factory("matern")
 def _matern_dataset_factory(active_dim: List[int]):
-    mat = jaxkern.stationary.Matern52(active_dims=active_dim)
-    white = jaxkern.White(active_dims=active_dim)
-    kernel = jaxkern.SumKernel([mat, white])
+    k = jaxkern.stationary.Matern52(active_dims=active_dim)
+    # white = jaxkern.White(active_dims=active_dim)
+    # kernel = jaxkern.SumKernel([mat, white])
     params = {
         "mean_function": {},
-        "kernel": [
-            {"lengthscale": _LENGTHSCALE, "variance": _KERNEL_VAR,},
-            {"variance": _NOISE_VAR,},
-        ],
-        "noise_variance": 0.0
+        "kernel": {"lengthscale": _LENGTHSCALE, "variance": _KERNEL_VAR,},
+            # {"variance": _NOISE_VAR,},
+        "noise_variance": _NOISE_VAR
     }
-    return GPFunctionalDistribution(kernel, params)
+    return GPFunctionalDistribution(k, params)
 
 
 class Sawtooth(FuntionalDistribution):
