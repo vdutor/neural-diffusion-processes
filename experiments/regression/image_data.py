@@ -4,6 +4,13 @@ from neural_diffusion_processes.types import Batch
 
 
 def unflatten_image(flattened_image: tf.Tensor, orig_image_shape: tf.TensorShape) -> tf.Tensor:
+    """
+    Utility function to unflatten an image (such as a predicted image); to do this the original
+    image size must be known
+
+    :param flattened_image: image that we wish to unflatten
+    :param orig_image_shape: shape with
+    """
     num_pixels_x, num_pixels_y, num_channels = orig_image_shape
     unflattened_image = tf.transpose(flattened_image, (1, 0))
     unflattened_image = tf.reshape(unflattened_image, (num_channels, num_pixels_y, num_pixels_x))
@@ -12,7 +19,7 @@ def unflatten_image(flattened_image: tf.Tensor, orig_image_shape: tf.TensorShape
 
 
 def flatten_images(image: tf.Tensor):
-    """ flatten images, assuming batch dimension """
+    """ utility function to flatten images, assuming batch dimension """
     num_batches, num_pixels_x, num_pixels_y, num_channels = get_image_info(image)
     flat_image = tf.transpose(image, (0, 3, 2, 1))
     flat_image = tf.reshape(flat_image, (num_batches, num_channels, num_pixels_x*num_pixels_y))
@@ -21,21 +28,32 @@ def flatten_images(image: tf.Tensor):
 
 
 def get_image_info(image: tf.Tensor):
-    num_batches = tf.shape(image)[0]
-    num_pixels_x = tf.shape(image)[1]
-    num_pixels_y = tf.shape(image)[2]
-    num_channels = tf.shape(image)[3]
+    """ Unpack shape of image into constituent parts """
+    num_channels = tf.shape(image)[-1]
+    num_pixels_y = tf.shape(image)[-2]
+    num_pixels_x = tf.shape(image)[-3]
+    num_batches = tf.shape(image)[-4]
     return num_batches, num_pixels_x, num_pixels_y, num_channels
 
 
 def normalise_image(image: tf. Tensor) -> tf.Tensor:
+    """ Convert image values to be [-1, 1] """
     converted_image = tf.cast(image, tf.float32)
     normalised_image = converted_image / 255
     normalised_image = 2.0 * (normalised_image - 0.5)
     return normalised_image
 
 
-def process_data(example):
+def add_image_channel_if_missing(example):
+    """ Add a channel dimension if it doesn't already exist """
+    image = example['image']
+    if tf.rank(image) == 3:
+        example['image'] = image[..., None]
+    return example
+
+
+def transform_image(example):
+    """ Normalise and flatten image """
     image = example['image']
     normalised_image = normalise_image(image)
     flattened_normalised_image = flatten_images(normalised_image)
@@ -43,24 +61,40 @@ def process_data(example):
     return example
 
 
-def create_xy_data(example):
+def create_xy_inputs(example):
+    """
+    Create X, Y locations of each pixel of an image. Repeat for each batch and add to
+
+    Note these image pixel locations are assumed to be within the range [0, 1]
+    """
     image = example['image']
     num_batches, num_pixels_x, num_pixels_y, num_channels = get_image_info(image)
+    xx_yy_grid_flat = create_xy_grid_features_from_single_image(num_pixels_x, num_pixels_y)
+    # Repeat for every batch
+    xx_yy_grid_flat = tf.repeat(xx_yy_grid_flat[None, ...], num_batches, axis=0)
+    example['xx_yy'] = xx_yy_grid_flat
+    return example
 
-    # make xys
-    centred_x_grid = tf.linspace(start=1, stop=-1, num=num_pixels_x)
-    centred_y_grid = tf.linspace(start=-1, stop=1, num=num_pixels_y)
-    # assert centred_x_grid.shape[0] == num_pixels_x
-    # assert centred_y_grid.shape[0] == num_pixels_y
-    centred_xx_grid, centred_yy_grid = tf.meshgrid(centred_x_grid, centred_y_grid)
+
+def create_xy_grid_features_from_single_image(num_pixels_x: int, num_pixels_y: int) -> tf.Tensor:
+    """ Create input features by creating a meshgrid and flattening """
+    centred_xx_grid, centred_yy_grid = create_xy_meshgrid(num_pixels_x, num_pixels_y)
     xx_yy_grid_flat = tf.stack([
         tf.reshape(centred_yy_grid, (-1,)),
         tf.reshape(centred_xx_grid, (-1,)),
     ], axis=1)  # [num_pixels_x*num_pixels_y, 2]
     xx_yy_grid_flat = tf.cast(xx_yy_grid_flat, tf.float32)
-    xx_yy_grid_flat = tf.repeat(xx_yy_grid_flat[None, ...], num_batches, axis=0)
-    example['xx_yy'] = xx_yy_grid_flat
-    return example
+    return xx_yy_grid_flat
+
+
+def create_xy_meshgrid(num_pixels_x, num_pixels_y):
+    """ Create an x-y meshgrid, where x=0, y=0 is the bottom left hand pixel of the image"""
+    centred_x_grid = tf.linspace(start=1, stop=-1, num=num_pixels_x)
+    centred_y_grid = tf.linspace(start=-1, stop=1, num=num_pixels_y)
+    # assert centred_x_grid.shape[0] == num_pixels_x
+    # assert centred_y_grid.shape[0] == num_pixels_y
+    centred_xx_grid, centred_yy_grid = tf.meshgrid(centred_x_grid, centred_y_grid)
+    return centred_xx_grid, centred_yy_grid
 
 
 def split_into_target_and_context(example, number_of_context=(0.1, 0.2, 0.5)):
@@ -91,11 +125,20 @@ def delete_unused_columns(example):
     return example
 
 
+def add_mask(example):
+    num_batches = tf.shape(example['x_target'])[0]
+    num_target = tf.shape(example['x_target'])[1]
+    num_context = tf.shape(example['x_context'])[1]
+    example['mask_target'] = tf.zeros((num_batches, num_target))
+    example['mask_context'] = tf.zeros((num_batches, num_context))
+    return example
+
+
 def get_image_data(
-        dataset_name: str = "lansinuote/gen.1.celeba",
-        image_col: str = "image",
-        batch_size: int = 1024,
-        num_epochs: int = 1,
+    dataset_name: str = "lansinuote/gen.1.celeba",
+    image_col: str = "image",
+    batch_size: int = 1024,
+    num_epochs: int = 1,
 ):
     celeb_dataset = datasets.load_dataset(dataset_name)
     celeb_dataset.set_format('tensorflow')
@@ -105,21 +148,28 @@ def get_image_data(
     # NOTE: This this will revisit the data in the same order in each epoch, but will still have
     # random masking for each which will differ between epochs
     celeb_tf_dataset = celeb_tf_dataset.repeat(count=num_epochs)
-    processed_celeb_tf_dataset = celeb_tf_dataset.map(process_data)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(create_xy_data)
+    processed_celeb_tf_dataset = celeb_tf_dataset.map(add_image_channel_if_missing)
+    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(transform_image)
+    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(create_xy_inputs)
     processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(split_into_target_and_context)
     processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(delete_unused_columns)
+    #processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(add_mask)
     processed_celeb_tf_dataset = processed_celeb_tf_dataset.prefetch(AUTOTUNE)
     processed_celeb_tf_dataset = processed_celeb_tf_dataset.as_numpy_iterator()
-    return map(lambda d: Batch(**d), processed_celeb_tf_dataset)
+    processed_celeb_batch_dataset = map(lambda d: Batch(**d), processed_celeb_tf_dataset)
+    return processed_celeb_batch_dataset
 
 
 if __name__ == '__main__':
-    image_data = get_image_data()
+    dataset_name = "lansinuote/gen.1.celeba"
+    print(dataset_name)
+    image_data = get_image_data(dataset_name=dataset_name)
     for i in range(10):
         data = next(image_data)
-        print(data.keys())
-        print(data['x_target'].shape)
-        print(data['y_target'].shape)
-        print(data['x_context'].shape)
-        print(data['y_context'].shape)
+        print(f"x_target: {data.x_target.shape}")
+        print(f"y_target: {data.y_target.shape}")
+        print(f"x_context: {data.x_context.shape}")
+        print(f"y_context: {data.y_context.shape}")
+        if data.mask_target is not None:
+            print(f"mask_target: {data.mask_target.shape}")
+            print(f"mask_context: {data.mask_context.shape}")
