@@ -64,7 +64,7 @@ def get_experiment_dir(config: Config, output: str = "root", exist_ok: bool = Tr
     return dir_
 
 
-def get_data(
+def get_gp_data(
     dataset: str,
     input_dim: int = 1,
     train: bool = True,
@@ -90,13 +90,22 @@ def get_data(
 
 
 config: Config = setup_config(Config)
-ds_train: Dataset = get_data(
-    config.dataset,
-    input_dim=1,
-    train=True,
-    batch_size=config.batch_size,
-    num_epochs=config.num_epochs,
-)
+
+if ('mnist' in config.dataset) or ('celeba' in config.dataset):
+    ds_train: Dataset = get_image_data(
+        dataset_name=config.dataset,
+        batch_size=config.batch_size,
+        num_epochs=config.num_epochs,
+    )
+else:
+    ds_train: Dataset = get_gp_data(
+        config.dataset,
+        input_dim=1,
+        train=True,
+        batch_size=config.batch_size,
+        num_epochs=config.num_epochs,
+    )
+
 batch0 = next(ds_train)
 key = jax.random.PRNGKey(config.seed)
 
