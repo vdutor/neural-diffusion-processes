@@ -8,7 +8,6 @@ packages = [{include = "neural_diffusion_processes"}]
 
 [tool.poetry.dependencies]
 python = "~3.10"
-jax = "^0.4.10"
 datasets = "^2.12.0"
 jaxtyping = "^0.2.19"
 check-shapes = "^1.0.0"
@@ -21,11 +20,23 @@ tensorboardx = "^2.6"
 aim = "^3.17.4"
 tensorflow = "^2.12.0"
 tensorflow-datasets = "^4.9.2"
-gpjax = "^0.6.1"
 ipython = "^8.13.2"
 ml-collections = "^0.1.1"
 equinox = "^0.10.4"
+jax = {version = "0.4.8", extras = ["cuda12-pip"]}
+gpjax = "^0.6.1"
 
+
+[[tool.poetry.source]]
+name = "jax[cuda12_pip]"
+url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+priority = "primary"
+
+
+[[tool.poetry.source]]
+name = "jax"
+url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
+priority = "primary"
 
 [build-system]
 requires = ["poetry-core"]
