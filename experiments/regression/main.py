@@ -28,12 +28,16 @@ from neural_diffusion_processes.model import BiDimensionalAttentionModel
 from neural_diffusion_processes.process import cosine_schedule, GaussianDiffusion
 from neural_diffusion_processes.utils.config import setup_config
 from neural_diffusion_processes.utils.state import TrainingState
+from neural_diffusion_processes.utils import state as state_utils
 from neural_diffusion_processes.utils import writers
 from neural_diffusion_processes.utils import actions
+
+
 from config import Config
 
 
-EXPERIMENT = "regression-May23"
+EXPERIMENT = "regression-May23-2"
+EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
 LOG_DIR = 'logs'
@@ -41,9 +45,15 @@ LOG_DIR = 'logs'
 
 def get_experiment_name(config: Config):
     del config  # Currently not used but name could be based on config
-    letters = string.ascii_lowercase
-    id = ''.join(random.choice(letters) for i in range(4))
-    return f"{DATETIME}_{id}"
+    global EXPERIMENT_NAME
+
+    if EXPERIMENT_NAME is None:
+        letters = string.ascii_lowercase
+        id = ''.join(random.choice(letters) for i in range(4))
+        EXPERIMENT_NAME = f"{DATETIME}_{id}"
+
+    return EXPERIMENT_NAME
+
 
 
 def get_experiment_dir(config: Config, output: str = "root", exist_ok: bool = True) -> pathlib.Path:
@@ -80,6 +90,8 @@ def get_gp_data(
         "y_target": data["y_target"].astype(np.float32),
         "x_context": data["x_context"].astype(np.float32),
         "y_context": data["y_context"].astype(np.float32),
+        "mask_context": data["mask_context"].astype(np.float32),
+        "mask_target": data["mask_target"].astype(np.float32),
     })
     if train:
         ds = ds.repeat(count=num_epochs)
@@ -92,25 +104,7 @@ def get_gp_data(
 
 
 config: Config = setup_config(Config)
-
-if ('mnist' in config.dataset) or ('celeba' in config.dataset):
-    ds_train: Dataset = get_image_data(
-        dataset_name=config.dataset,
-        batch_size=config.batch_size,
-        num_epochs=config.num_epochs,
-    )
-else:
-    ds_train: Dataset = get_gp_data(
-        config.dataset,
-        input_dim=1,
-        train=True,
-        batch_size=config.batch_size,
-        num_epochs=config.num_epochs,
-    )
-
-batch0 = next(ds_train)
 key = jax.random.PRNGKey(config.seed)
-
 beta_t = cosine_schedule(config.diffusion.beta_start, config.diffusion.beta_end, config.diffusion.timesteps)
 process = GaussianDiffusion(beta_t)
 
@@ -202,21 +196,35 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
 
 @jax.jit
 def sample_prior(state: TrainingState, key: Rng, x: jnp.array):
-    print("compiling sample_prior")
-    key, ykey, bkey  = jax.random.split(key, 3)
-    yT = jax.random.normal(ykey, (len(x), 1))
     net_with_params = partial(net, state.params_ema)
-    y0 = process.sample(bkey, yT, x, mask=None, model_fn=net_with_params)
+    y0 = process.sample(key, x, mask=None, model_fn=net_with_params)
     return x, y0
 
 
-def plot_prior(state: TrainingState, key: Rng):
-    fig, ax = plt.subplots()
+@jax.jit
+def sample_conditional(state: TrainingState, key: Rng):
+    x = jnp.linspace(-2, 2, 57)[:, None]
+    xc = jnp.array([-1., 0., 1.]).reshape(-1, 1)
+    yc = jnp.array([0., -1., 1.]).reshape(-1, 1)
+    net_with_params = partial(net, state.params_ema)
+    y0 = process.conditional_sample(key, x, mask=None, x_context=xc, y_context=yc, mask_context=None, model_fn=net_with_params)
+    return x, y0, xc, yc
+
+
+def plots(state: TrainingState, key: Rng):
+    if config.input_dim != 1: return {}  # only plot for 1D inputs
+    # prior
+    fig_prior, ax = plt.subplots()
     x = jnp.linspace(-2, 2, 60)[:, None]
     x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
     ax.plot(x[...,0].T, y0[...,0].T, color="C0", alpha=0.5)
-    return {"prior": fig}
 
+    # conditional
+    fig_cond, ax = plt.subplots()
+    x, y0, xc, yc = jax.vmap(lambda k: sample_conditional(state, k))(jax.random.split(key, 10))
+    ax.plot(x[...,0].T, y0[...,0].T, "C0", alpha=0.5)
+    ax.plot(xc[...,0].T, yc[...,0].T, "C3o")
+    return {"prior": fig_prior, "conditional": fig_cond}
 
 def plot_prior_image(state: TrainingState, key: Rng):
     fig, ax = plt.subplots()
@@ -240,53 +248,143 @@ def plot_prior_image(state: TrainingState, key: Rng):
     return {"prior": fig}
 
 
-state = init(batch0, jax.random.PRNGKey(config.seed))
+batch_init = Batch(
+    x_target=jnp.zeros((config.batch_size, 10, config.input_dim)),
+    y_target=jnp.zeros((config.batch_size, 10, 1)),
+    x_context=jnp.zeros((config.batch_size, 10, config.input_dim)),
+    y_context=jnp.zeros((config.batch_size, 10, 1)),
+    mask_context=jnp.zeros((config.batch_size, 10)),
+    mask_target=jnp.zeros((config.batch_size, 10)),
+)
+state = init(batch_init, jax.random.PRNGKey(config.seed))
 
-
-exp_root_dir = get_experiment_dir(config)
-local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
-tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
-# aim_writer = writers.AimWriter(EXPERIMENT)
-writer = writers.MultiWriter([tb_writer, local_writer])
-writer.log_hparams(asdict(config))
-
-if ('mnist' in config.dataset) or ('celeba' in config.dataset):
-    plot_func = plot_prior_image
+experiment_dir_if_exists = pathlib.Path(config.restore)
+if (experiment_dir_if_exists / "checkpoints").exists():
+    index = state_utils.find_latest_checkpoint_step_index(str(experiment_dir_if_exists))
+    if index is not None:
+        state = state_utils.load_checkpoint(state, str(experiment_dir_if_exists), step_index=index)
+        print("Restored checkpoint at step {}".format(state.step))
+    writer = None
 else:
-    plot_func = plot_prior
+    exp_root_dir = get_experiment_dir(config)
+    local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
+    tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
+    aim_writer = writers.AimWriter(EXPERIMENT)
+    writer = writers.MultiWriter([aim_writer, tb_writer, local_writer])
+    writer.log_hparams(asdict(config))
 
-actions = [
-    actions.PeriodicCallback(
-        every_steps=10,
-        callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
-    ),
-    actions.PeriodicCallback(
-        every_steps=1000, # config.total_steps // 5,
-        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
+    if ('mnist' in config.dataset) or ('celeba' in config.dataset):
+        ds_train: Dataset = get_image_data(
+            dataset_name=config.dataset,
+            batch_size=config.batch_size,
+            num_epochs=config.num_epochs,
+        )
+        plot_func = plot_prior_image
+    else:
+        ds_train: Dataset = get_gp_data(
+            config.dataset,
+            input_dim=config.input_dim,
+            train=True,
+            batch_size=config.batch_size,
+            num_epochs=config.num_epochs,
+        )
+        plot_func = plots
+
+    actions = [
+        actions.PeriodicCallback(
+            every_steps=10,
+            callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
+        ),
+        actions.PeriodicCallback(
+            every_steps=config.total_steps // 4,
+            callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
+        ),
+        actions.PeriodicCallback(
+            every_steps=config.total_steps // 2,
+            callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
+        ),
+    ]
+
+
+    batch0 = next(ds_train)
+    state = init(batch0, jax.random.PRNGKey(config.seed))
+
+    steps = range(state.step + 1, config.total_steps + 1)
+    progress_bar = tqdm.tqdm(steps)
+
+    for step, batch in zip(progress_bar, ds_train):
+        if step < state.step: continue  # wait for the state to catch up in case of restarts
+
+        state, metrics = update_step(state, batch)
+        metrics["lr"] = learning_rate_schedule(state.step)
+
+        for action in actions:
+            action(step, t=None, metrics=metrics, state=state, key=key)
+
+        if step % 100 == 0:
+            progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+
+
+print("EVALUATION")
+
+
+import pprint
+import jaxlinop
+from functools import partial
+from gpjax.gaussian_distribution import GaussianDistribution
+
+
+net_with_params = partial(net, state.params_ema)
+n_samples = config.eval.num_samples
+
+
+@jax.jit
+@partial(jax.vmap, in_axes=(0, None, None, None, None))
+def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
+    return process.conditional_sample(
+        key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
+
+
+@jax.jit
+@partial(jax.vmap, in_axes=(None, 0, 0, 0, 0, 0))
+def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
+    samples = sample_n_conditionals(jax.random.split(key, n_samples), x_test, x_context, y_context, mask_context)
+    samples = samples.squeeze(axis=-1)
+    mean = jnp.mean(samples, axis=0)
+    centered_samples = samples - mean
+    covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
+    post = GaussianDistribution(
+        loc=mean.squeeze(),
+        scale=jaxlinop.DenseLinearOperator(covariance),
     )
-    # ml_tools.actions.PeriodicCallback(
-    #     every_steps=None if is_smoketest(config) else num_steps // 4,
-    #     callback_fn=lambda step, t, **kwargs: [
-    #         cb(step, t, **kwargs) for cb in task_callbacks
-    #     ]
-    # ),
-    # ml_tools.actions.PeriodicCallback(
-    #     every_steps=num_steps//10,
-    #     callback_fn=lambda step, t, **kwargs: ml_tools.state.save_checkpoint(kwargs["state"], exp_root_dir, step)
-    # ),
+    ll = post.log_prob(y_test.squeeze()) / len(x_test)
+    mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
+    num_context = len(x_context) - jnp.count_nonzero(mask_context)
+    return {"mse": mse, "ll": ll, "nc": num_context}
+
+
+ds_test = get_gp_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=False,
+    batch_size=config.eval.batch_size,
+    num_epochs=1,
+)
+
+metrics = {"mse": [], "ll": [], "nc": []}
+
+for batch in tqdm.tqdm(ds_test, total=128 // config.eval.batch_size):
+    m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
+    for k, v in m.items():
+        metrics[k].append(v)
+
+err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+summary_stats = [
+    ("mean", jnp.mean),
+    ("std", jnp.std),
+    ("err", err)
 ]
-
-
-progress_bar = tqdm.tqdm(list(range(1, config.total_steps + 1)), miniters=1)
-
-for step, batch in zip(progress_bar, ds_train):
-    if step < state.step: continue  # wait for the state to catch up in case of restarts
-
-    state, metrics = update_step(state, batch)
-    metrics["lr"] = learning_rate_schedule(state.step)
-
-    for action in actions:
-        action(step, t=None, metrics=metrics, state=state, key=key)
-
-    if step % 100 == 0:
-        progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+pprint.pprint(metrics)
+if writer is not None:
+    writer.write_scalars(config.num_epochs + 1, metrics)

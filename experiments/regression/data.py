@@ -49,7 +49,6 @@ class TaskConfig:
 class DatasetConfig:
     max_input_dim: int  # (incl.)
     is_gp: bool
-    train_num_target: UniformDiscrete = UniformDiscrete(1, 60)
     eval_num_target: UniformDiscrete = UniformDiscrete(50, 50)
     eval_num_context: UniformDiscrete = UniformDiscrete(1, 10)
 
@@ -100,7 +99,8 @@ class GPFunctionalDistribution(FuntionalDistribution):
     
     def sample(self, key, x: Float[Array, "N D"]) -> Float[Array, "N 1"]:
         f = self.prior.predict(self.params)(x).sample(seed=key, sample_shape=()).reshape(x.shape[0], 1)
-        y = f + (jax.random.normal(key, shape=f.shape) * jnp.sqrt(self.params["noise_variance"]))
+        sigma2 = self.params["noise_variance"]
+        y = f + (jax.random.normal(key, shape=f.shape) * jnp.sqrt(sigma2))
         return y
 
 
@@ -118,34 +118,29 @@ def register_dataset_factory(name: str):
     
 @register_dataset_factory("se")
 def _se_dataset_factory(active_dim: List[int]):
-    rbf = gpjax.kernels.stationary.RBF(active_dims=active_dim)
-    white = gpjax.kernels.White(active_dims=active_dim)
-    kernel = gpjax.kernels.SumKernel([rbf, white])
+    k = gpjax.kernels.stationary.RBF(active_dims=active_dim)
+    input_dim = len(active_dim)
     params = {
         "mean_function": {},
-        "kernel": [
-            {"lengthscale": _LENGTHSCALE, "variance": _KERNEL_VAR,},
-            {"variance": _NOISE_VAR,},
-        ],
-        "noise_variance": 0.0
+        "kernel": {"lengthscale": _LENGTHSCALE * input_dim, "variance": _KERNEL_VAR,},
+            # {"variance": 0,},
+        # ],
+        "noise_variance": _NOISE_VAR
     }
-    return GPFunctionalDistribution(kernel, params)
+    return GPFunctionalDistribution(k, params)
 
 
 @register_dataset_factory("matern")
 def _matern_dataset_factory(active_dim: List[int]):
-    mat = gpjax.kernels.stationary.Matern52(active_dims=active_dim)
-    white = gpjax.kernels.White(active_dims=active_dim)
-    kernel = gpjax.kernels.SumKernel([mat, white])
+    k = gpjax.kernels.stationary.Matern52(active_dims=active_dim)
+    input_dim = len(active_dim)
     params = {
         "mean_function": {},
-        "kernel": [
-            {"lengthscale": _LENGTHSCALE, "variance": _KERNEL_VAR,},
-            {"variance": _NOISE_VAR,},
-        ],
-        "noise_variance": 0.0
+        "kernel": {"lengthscale": _LENGTHSCALE * input_dim, "variance": _KERNEL_VAR,},
+            # {"variance": _NOISE_VAR,},
+        "noise_variance": _NOISE_VAR
     }
-    return GPFunctionalDistribution(kernel, params)
+    return GPFunctionalDistribution(k, params)
 
 
 class Sawtooth(FuntionalDistribution):
@@ -206,18 +201,38 @@ def get_batch(key, batch_size: int, name: str, task: str, input_dim: int):
         )
 
     if task == "training":
-        max_n_target = _DATASET_CONFIGS[name].train_num_target.upper
+        min_n_target = _DATASET_CONFIGS[name].eval_num_target.lower
+        max_n_target = (
+            _DATASET_CONFIGS[name].eval_num_target.upper
+            + _DATASET_CONFIGS[name].eval_num_context.upper * input_dim
+        )  # input_dim * num_context + num_target
         max_n_context = 0
     else:
         max_n_target = _DATASET_CONFIGS[name].eval_num_target.upper
-        max_n_context = _DATASET_CONFIGS[name].eval_num_context.upper
+        max_n_context = _DATASET_CONFIGS[name].eval_num_context.upper * input_dim
 
-    key, ckey, tkey = jax.random.split(key, 3)
-    task = _TASK_CONFIGS[task]
-    x_context = task.x_context_dist.sample(seed=ckey, sample_shape=(batch_size, max_n_context, input_dim))
+    key, ckey, tkey, mkey = jax.random.split(key, 4)
+    x_context = _TASK_CONFIGS[task].x_context_dist.sample(seed=ckey, sample_shape=(batch_size, max_n_context, input_dim))
 
-    x_target = task.x_target_dist.sample(seed=tkey, sample_shape=(batch_size, max_n_target, input_dim))
+    x_target = _TASK_CONFIGS[task].x_target_dist.sample(seed=tkey, sample_shape=(batch_size, max_n_target, input_dim))
     x = jnp.concatenate([x_context, x_target], axis=1)
+
+    if task == "training":
+        num_keep_target = jax.random.randint(mkey, (), minval=min_n_target, maxval=max_n_target)
+        mask_target = jnp.where(
+            jnp.arange(max_n_target)[None, :] < num_keep_target,
+            jnp.zeros_like(x_target)[..., 0],  # keep
+            jnp.ones_like(x_target)[..., 0]  # ignore
+        )
+        mask_context = jnp.zeros_like(x_context[..., 0])
+    elif task == "interpolation":
+        num_keep_context = jax.random.randint(mkey, (), minval=1, maxval=max_n_context)
+        mask_context = jnp.where(
+            jnp.arange(max_n_context)[None, :] < num_keep_context,
+            jnp.zeros_like(x_context)[..., 0],  # keep
+            jnp.ones_like(x_context)[..., 0]  # ignore
+        )
+        mask_target = jnp.zeros_like(x_target[..., 0])
 
     keys = jax.random.split(key, batch_size)
     active_dims = list(range(input_dim))
@@ -228,161 +243,6 @@ def get_batch(key, batch_size: int, name: str, task: str, input_dim: int):
         y_target=y[:, max_n_context:, :],
         x_context=x_context,
         y_context=y[:, :max_n_context, :],
-        mask_context=None,
-        mask_target=None,
+        mask_target=mask_target,
+        mask_context=mask_context,
     )
-
-
-# class DatasetFromGenerator:
-#     def __init__(self, generator, key):
-#         self._key = key
-#         self._generator  = generator
-#         self._preprocess = []
-    
-#     def map(self, function):
-#         self._preprocess.append(function)
-    
-#     def __iter__(self):
-#         return self
-    
-#     def __next__(self):
-#         batch = next(self._generator)
-#         for func in self._preprocess:
-#             self._key, key = jax.random.split(self._key)
-#             batch = func(batch, key=key)
-#         return batch
-
-
-# def data_generator(key, dataset, task, total_num_samples, batch_size, num_epochs: Optional[int] = None):
-#     """
-#     :param num_epochs: if `None` generator runs forever
-#     """
-#     assert total_num_samples % batch_size == 0
-
-#     @jax.jit
-#     def batch(key) -> DataBatch:
-#         return get_batch(key, batch_size, dataset, task)
-
-#     _ = batch(key)
-
-#     if num_epochs is None:
-#         num_epochs = jnp.inf
-    
-#     count_epochs = 0
-#     while count_epochs < num_epochs:
-#         count_epochs += 1
-#         for _ in range(total_num_samples // batch_size):
-#             key, bkey = jax.random.split(key)
-#             yield batch(bkey)
-
-
-
-# def get_padding_function(dataset: str, task: str):
-#     if task == "training":
-#         target_num_data_sampler = _DATASET_CONFIGS[dataset].train_num_target
-#         context_num_data_sampler = None
-#     else:
-#         target_num_data_sampler = _DATASET_CONFIGS[dataset].eval_num_target
-#         context_num_data_sampler = _DATASET_CONFIGS[dataset].eval_num_context
-
-#     @jax.jit
-#     def padding(batch: DataBatch, key):
-#         num_data_total = batch.xs.shape[1]
-#         num_data = target_num_data_sampler.sample(key, shape=())
-#         mask = jnp.where(
-#             jnp.arange(num_data_total)[None, :, None] < num_data,
-#             jnp.zeros_like(batch.xs),  # keep
-#             jnp.ones_like(batch.xs)  # ignore
-#         )[..., 0]
-
-#         # repeat for context
-#         if context_num_data_sampler is not None:
-#             num_data_total = batch.xc.shape[1]
-#             num_data = context_num_data_sampler.sample(key, shape=())
-#             mask_context = jnp.where(
-#                 jnp.arange(num_data_total)[None, :, None] < num_data,
-#                 jnp.zeros_like(batch.xc),  # keep
-#                 jnp.ones_like(batch.xc),  # ignore
-#             )[..., 0]
-#         else:
-#             mask_context = None
-
-#         return DataBatch(
-#             xs=batch.xs,
-#             ys=batch.ys,
-#             mask=mask,
-#             xc=batch.xc,
-#             yc=batch.yc,
-#             mask_context=mask_context
-#         )
-
-#     return padding
-
-
-# def get_dataset(dataset: str, task: str, *, key, batch_size: int, samples_per_epoch: int, num_epochs: Optional[int] = None) -> DatasetFromGenerator:
-#     gkey, dskey = jax.random.split(key)
-#     gen = data_generator(gkey, dataset, task, samples_per_epoch, batch_size, num_epochs)
-#     ds = DatasetFromGenerator(gen, dskey)
-#     ds.map(get_padding_function(dataset, task))
-#     return ds
-
-
-#%%
-if __name__ == "__main__":
-    import matplotlib
-    jax.config.update("jax_enable_x64", True)
-
-
-    def plot_data():
-        import numpy
-        import matplotlib.pyplot as plt
-        import itertools
-
-        def info(a, name):
-            print(name)
-            print(a.shape)
-            print("="*10)
-
-        def plot_data(xc, yc, xt, yt, ax, legend=True, ns=1):
-            info(xc, "context")
-            info(xt, "target")
-            ax.plot(xt[:ns, :, 0].T, yt[:ns, :, 0].T, "C1.", label="target")
-            ax.plot(xc[:ns, :, 0].T, yc[:ns, :, 0].T, "C0.", label="context")
-            handles, labels = ax.get_legend_handles_labels()
-            labels, ids = numpy.unique(labels, return_index=True)
-            handles = [handles[i] for i in ids]
-            if legend:
-                ax.legend(handles, labels, loc='best')
-
-
-        key = jax.random.PRNGKey(0)
-
-        fig, axes = plt.subplots(len(_DATASET_FACTORIES), len(_TASK_CONFIGS), figsize=(15, 5), sharex=True, tight_layout=True)
-
-        for (i, dataset), (j, task) in itertools.product(enumerate(_DATASET_FACTORIES.keys()), enumerate(_TASK_CONFIGS.keys())):
-            print(dataset, task)
-            ax = axes[i,j]
-            ax.set_xlim(-4, 6)
-            data = get_batch(key, 16, dataset, task)
-            plot_data(data.xc, data.yc, data.xs, data.ys, ax, legend=(i==0) and (j==0))
-            if i == 0:
-                ax.set_title(task)
-            if j == 0:
-                ax.set_ylabel(dataset)
-        
-        plt.savefig("fig1.png")
-
-
-        nrows = len(_DATASET_FACTORIES)
-        fig, axes = plt.subplots(nrows, 1, figsize=(15, 3 * nrows), sharex=True)
-        for i, name in enumerate(_DATASET_FACTORIES.keys()):
-            ax = axes[i]
-            keys = jax.random.split(key, 16)
-            x = jnp.linspace(-2, 3, 500)[:, None]
-            y = jax.vmap(_DATASET_FACTORIES[name].sample, in_axes=[0, None])(keys, x)
-            ax.set_title(name)
-            ax.plot(x, y[:3, :, 0].T)
-
-        plt.savefig("fig2.png")
-    
-    plot_data()

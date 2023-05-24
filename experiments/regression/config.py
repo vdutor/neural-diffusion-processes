@@ -19,25 +19,36 @@ class OptimizerConfig:
     end_lr: float = 1e-5
     ema_rate: float = 0.995  # 0.999
 
+
 @dataclass
 class NetworkConfig:
-    n_layers: int = 2
-    hidden_dim: int = 64
+    n_layers: int = 3
+    hidden_dim: int = 128
     num_heads: int = 8
+
+
+@dataclass
+class EvalConfig:
+    batch_size: int = 4
+    num_samples: int = 128
 
 
 @dataclass
 class Config:
     seed: int = 42
+    dataset: str = "se"
+    input_dim: int = 1
     batch_size: int = 32
-    num_epochs: int = 500
+    num_epochs: int = 250
     samples_per_epoch: int = int(2**14)
     loss_type: str = "l1"
-    dataset: str = "se"
+    eval: EvalConfig = EvalConfig()
     network: NetworkConfig = NetworkConfig()
     schedule: DiffusionConfig = DiffusionConfig()
     diffusion: DiffusionConfig = DiffusionConfig()
     optimizer: OptimizerConfig = OptimizerConfig()
+
+    restore: str = ""
 
     @property
     def steps_per_epoch(self) -> int:

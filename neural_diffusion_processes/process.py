@@ -4,7 +4,7 @@ import jax
 from einops import repeat
 from check_shapes import check_shapes
 
-from .types import Rng, ndarray
+from .types import Rng, ndarray, Batch
 
 
 class EpsModel(Protocol):
@@ -38,12 +38,20 @@ class GaussianDiffusion:
         self.betas = betas
         self.alphas = 1.0 - betas
         self.alpha_bars=jnp.cumprod(1.0 - betas)
+    
+
+    @check_shapes("y0: [N, y_dim]", "t: []", "return[0]: [N, y_dim]", "return[1]: [N, y_dim]")
+    def pt0(self, y0: ndarray, t: ndarray) -> Tuple[ndarray, ndarray]:
+        alpha_bars = expand_to(self.alpha_bars[t], y0)
+        m_t0 = jnp.sqrt(alpha_bars) * y0
+        v_t0 = (1.0 - alpha_bars) * jnp.ones_like(y0)
+        return m_t0, v_t0
 
     @check_shapes("y0: [N, y_dim]", "t: []", "return[0]: [N, y_dim]", "return[1]: [N, y_dim]")
     def forward(self, key: Rng, y0: ndarray, t: ndarray) -> Tuple[ndarray, ndarray]:
-        alpha_bars = expand_to(self.alpha_bars[t], y0)
+        m_t0, v_t0 = self.pt0(y0, t)
         noise = jax.random.normal(key, y0.shape)
-        yt = jnp.sqrt(alpha_bars) * y0 + jnp.sqrt(1.0 - alpha_bars) * noise
+        yt = m_t0 + jnp.sqrt(v_t0) * noise
         return yt, noise
 
     def ddpm_backward_step(
@@ -57,63 +65,113 @@ class GaussianDiffusion:
         alpha_t = expand_to(self.alphas[t], yt)
         alpha_bar_t = expand_to(self.alpha_bars[t], yt)
 
-        # z = jnp.where(
-        #     expand_to(t, yt) > 0, jax.random.normal(key, yt.shape), jnp.zeros_like(yt)
-        # )
         z = (t > 0) * jax.random.normal(key, shape=yt.shape, dtype=yt.dtype)
 
         a = 1.0 / jnp.sqrt(alpha_t)
         b = beta_t / jnp.sqrt(1.0 - alpha_bar_t)
         yt_minus_one = a * (yt - b * noise) + jnp.sqrt(beta_t) * z
         return yt_minus_one
+    
+    def ddpm_backward_mean_var(
+        self,
+        noise: ndarray,
+        yt: ndarray,
+        t: ndarray
+    ) -> ndarray:
+        beta_t = expand_to(self.betas[t], yt)
+        alpha_t = expand_to(self.alphas[t], yt)
+        alpha_bar_t = expand_to(self.alpha_bars[t], yt)
 
-    @check_shapes("yT: [N, y_dim]", "x: [N, x_dim]", "mask: [N,]", "return: [N, y_dim]")
-    def ddpm_backward(self, key, yT, x, mask, *, model_fn: EpsModel):
+        a = 1.0 / jnp.sqrt(alpha_t)
+        b = beta_t / jnp.sqrt(1.0 - alpha_bar_t)
+        m = a * (yt - b * noise)
+        v = beta_t * jnp.ones_like(yt) * (t > 0)
+        v = jnp.maximum(v, jnp.ones_like(v) * 1e-3)
+        return m, v
 
-        if mask is None:
-            mask = jnp.zeros_like(x[:, 0])
-
-        yt = yT
-
-        step = jax.jit(self.ddpm_backward_step)
-
-        for t in range(len(self.betas) - 1, -1, -1):
-            key, ekey, skey = jax.random.split(key, num=3)
-            noise_hat = model_fn(t, yt, x, mask, key=ekey)
-            yt = step(skey, noise_hat, yt, t)
-
-        return yt    
-
-
-    # def sample(self, *, key, model_fn: EpsModel, y, t, x, return_all: bool = False):
-    def sample(self, key, yT, x, mask, *, model_fn: EpsModel):
-        print("compiling sample")
-        ts = jnp.arange(len(self.betas))[::-1]
-        keys = jax.random.split(key, len(ts))
-        # t = repeat(t, "t -> t b", b=y.shape[0])
+    def sample(self, key, x, mask, *, model_fn: EpsModel, output_dim: int = 1):
+        key, ykey = jax.random.split(key)
+        yT = jax.random.normal(ykey, (len(x), output_dim))
 
         if mask is None:
             mask = jnp.zeros_like(x[:, 0])
 
         @jax.jit
         def scan_fn(y, inputs):
-            print("compiling scan_fn")
             t, key = inputs
             mkey, rkey = jax.random.split(key)
             noise_hat = model_fn(t, y, x, mask, key=mkey)
             y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y, t=t)
             return y, None
 
+        ts = jnp.arange(len(self.betas))[::-1]
+        keys = jax.random.split(key, len(ts))
         yf, yt = jax.lax.scan(scan_fn, yT, (ts, keys))
+        return yt if yt is not None else yf
+    
+    def conditional_sample(
+            self,
+            key,
+            x,
+            mask, *,
+            x_context,
+            y_context,
+            mask_context,
+            model_fn: EpsModel,
+            num_inner_steps: int = 5,
+        ):
+
+        if mask is None:
+            mask = jnp.zeros_like(x[:, 0])
+
+        if mask_context is None:
+            mask_context = jnp.zeros_like(x_context[:, 0])
+        
+        key, ykey = jax.random.split(key)
+        x_augmented = jnp.concatenate([x_context, x], axis=0)
+        mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
+        num_context = len(x_context)
+
+        g = 3e-4
+
+        @jax.jit
+        def inner(y, inputs):
+            t, key = inputs
+            ykey, mkey, rkey, zkey = jax.random.split(key, 4)
+            yt_context = self.forward(ykey, y_context, t)[0]
+            y_augmented = jnp.concatenate([yt_context, y], axis=0)
+            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
+            m, v = self.ddpm_backward_mean_var(noise=noise_hat, yt=y_augmented, t=t)
+            s = - v ** (-1) * (y_augmented - m)
+            y = y_augmented + 0.5 * g * s + g **.5 * jax.random.normal(zkey, shape=s.shape)
+            return y[num_context:], None
+
+
+        @jax.jit
+        def outer(yt_target, inputs):
+            t, key = inputs
+            ykey, mkey, rkey, lkey = jax.random.split(key, 4)
+            yt_context = self.forward(ykey, y_context, t)[0]
+            y_augmented = jnp.concatenate([yt_context, yt_target], axis=0)
+            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
+            y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y_augmented, t=t)
+
+            y = y[num_context:]
+            # num_inner_steps = jax.lax.cond(t < 10, lambda _: 50, lambda _: 5, None)
+            ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * (t - 1)
+            keys = jax.random.split(lkey, num_inner_steps)
+            y, _ = jax.lax.scan(inner, y, (ts, keys))
+
+            return y, None
+
+        ts = jnp.arange(len(self.betas))[::-1]
+        keys = jax.random.split(key, len(ts))
+        yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
+        yf, yt = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
         return yt if yt is not None else yf
 
 
-# GaussianDiffusion.forward = jax.jit(GaussianDiffusion.forward)
-# GaussianDiffusion.reverse = jax.jit(GaussianDiffusion.reverse)
-# GaussianDiffusion.sample = jax.jit(GaussianDiffusion.sample, static_argnames=("model_fn", "return_all"))
 
-
-from neural_diffusion_processes.types import Batch
 
 
 
