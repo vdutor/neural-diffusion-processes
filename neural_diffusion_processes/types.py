@@ -6,7 +6,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from simple_pytree import dataclass, Pytree
+from simple_pytree import Pytree
+# Note: simple_pytree has a dataclass that works with a static_field, but gpjax requires
+# simple_pytree < 0.2.0 for now, and simple_pytree added it's own dataclass in 0.2.0
+#from simple_pytree import dataclass
+import dataclasses
 
 ndarray = Union[jnp.ndarray, np.ndarray]
 Dtype = Any
@@ -15,7 +19,7 @@ Params = optax.Params
 Config = Any
 
 
-@dataclass
+@dataclasses.dataclass
 class Batch(Pytree):
     x_target: ndarray
     y_target: ndarray
