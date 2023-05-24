@@ -17,7 +17,8 @@ from functools import partial
 from dataclasses import asdict
 
 from experiments.regression.image_data import get_image_data, \
-    create_xy_grid_features_from_single_image
+    create_xy_grid_features_from_single_image, unflatten_image
+
 # Disable all GPUs for TensorFlow. Load data using CPU.
 tf.config.set_visible_devices([], 'GPU')
 AUTOTUNE = tf.data.experimental.AUTOTUNE
@@ -228,24 +229,29 @@ def plots(state: TrainingState, key: Rng):
 
 
 def plot_prior_image(state: TrainingState, key: Rng):
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(1, 3, figsize=(10, 4))
 
     # mnist
     num_pixels_x = 28
     num_pixels_y = 28
+    num_channels = 1
 
     # celeba (FIXME: could be reversed)
     # num_pixels_y = 218
     # num_pixels_x = 178
+    # num_channels = 3
     x_tf = create_xy_grid_features_from_single_image(
         num_pixels_x=num_pixels_x, num_pixels_y=num_pixels_y
     )
     x = jnp.array(x_tf.numpy())
-    print(x)
     x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
     print("Sampled")
-    ax.imshow(y0[...,0].T)
-
+    print(jnp.mean(y0))
+    y0_reshape = unflatten_image(y0, orig_image_shape=(num_pixels_x, num_pixels_y, num_channels))
+    ax[0].imshow(y0_reshape[0, ...])
+    ax[1].imshow(y0_reshape[1, ...])
+    ax[2].imshow(y0_reshape[2, ...])
+    fig.savefig('mnist.png')
     return {"prior": fig}
 
 
