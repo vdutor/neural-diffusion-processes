@@ -226,6 +226,7 @@ def plots(state: TrainingState, key: Rng):
     ax.plot(xc[...,0].T, yc[...,0].T, "C3o")
     return {"prior": fig_prior, "conditional": fig_cond}
 
+
 def plot_prior_image(state: TrainingState, key: Rng):
     fig, ax = plt.subplots()
 
@@ -278,15 +279,16 @@ else:
             dataset_name=config.dataset,
             batch_size=config.batch_size,
             num_epochs=config.num_epochs,
+            train=True,
         )
         plot_func = plot_prior_image
     else:
         ds_train: Dataset = get_gp_data(
             config.dataset,
             input_dim=config.input_dim,
-            train=True,
             batch_size=config.batch_size,
             num_epochs=config.num_epochs,
+            train=True,
         )
         plot_func = plots
 
@@ -363,13 +365,21 @@ def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
     return {"mse": mse, "ll": ll, "nc": num_context}
 
 
-ds_test = get_gp_data(
-    config.dataset,
-    input_dim=config.input_dim,
-    train=False,
-    batch_size=config.eval.batch_size,
-    num_epochs=1,
-)
+if ('mnist' in config.dataset) or ('celeba' in config.dataset):
+    ds_test: Dataset = get_image_data(
+        dataset_name=config.dataset,
+        batch_size=config.batch_size,
+        num_epochs=config.num_epochs,
+        train=False,
+    )
+else:
+    ds_test: Dataset = get_gp_data(
+        config.dataset,
+        input_dim=config.input_dim,
+        batch_size=config.batch_size,
+        num_epochs=config.num_epochs,
+        train=False,
+    )
 
 metrics = {"mse": [], "ll": [], "nc": []}
 
