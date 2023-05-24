@@ -245,13 +245,10 @@ def plot_prior_image(state: TrainingState, key: Rng):
     )
     x = jnp.array(x_tf.numpy())
     x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
-    print("Sampled")
-    print(jnp.mean(y0))
     y0_reshape = unflatten_image(y0, orig_image_shape=(num_pixels_x, num_pixels_y, num_channels))
     ax[0].imshow(y0_reshape[0, ...])
     ax[1].imshow(y0_reshape[1, ...])
     ax[2].imshow(y0_reshape[2, ...])
-    fig.savefig('mnist.png')
     return {"prior": fig}
 
 
