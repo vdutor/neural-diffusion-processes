@@ -8,13 +8,13 @@ def unflatten_image(flattened_image: tf.Tensor, orig_image_shape: tf.TensorShape
     Utility function to unflatten an image (such as a predicted image); to do this the original
     image size must be known
 
-    :param flattened_image: image that we wish to unflatten
+    :param flattened_image: images that we wish to unflatten, assumes it has a leading dimension
     :param orig_image_shape: shape with
     """
     num_pixels_x, num_pixels_y, num_channels = orig_image_shape
-    unflattened_image = tf.transpose(flattened_image, (1, 0))
-    unflattened_image = tf.reshape(unflattened_image, (num_channels, num_pixels_y, num_pixels_x))
-    unflattened_image = tf.transpose(unflattened_image, (2, 1, 0))
+    unflattened_image = tf.transpose(flattened_image, (0, 2, 1))
+    unflattened_image = tf.reshape(unflattened_image, (-1, num_channels, num_pixels_y, num_pixels_x))
+    unflattened_image = tf.transpose(unflattened_image, (0, 3, 2, 1))
     return unflattened_image
 
 

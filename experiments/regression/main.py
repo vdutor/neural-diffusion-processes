@@ -16,7 +16,8 @@ import optax
 from functools import partial
 from dataclasses import asdict
 
-from experiments.regression.image_data import get_image_data
+from experiments.regression.image_data import get_image_data, \
+    create_xy_grid_features_from_single_image
 # Disable all GPUs for TensorFlow. Load data using CPU.
 tf.config.set_visible_devices([], 'GPU')
 AUTOTUNE = tf.data.experimental.AUTOTUNE
@@ -217,6 +218,28 @@ def plot_prior(state: TrainingState, key: Rng):
     return {"prior": fig}
 
 
+def plot_prior_image(state: TrainingState, key: Rng):
+    fig, ax = plt.subplots()
+
+    # mnist
+    num_pixels_x = 28
+    num_pixels_y = 28
+
+    # celeba (FIXME: could be reversed)
+    # num_pixels_y = 218
+    # num_pixels_x = 178
+    x_tf = create_xy_grid_features_from_single_image(
+        num_pixels_x=num_pixels_x, num_pixels_y=num_pixels_y
+    )
+    x = jnp.array(x_tf.numpy())
+    print(x)
+    x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
+    print("Sampled")
+    ax.imshow(y0[...,0].T)
+
+    return {"prior": fig}
+
+
 state = init(batch0, jax.random.PRNGKey(config.seed))
 
 
@@ -227,6 +250,10 @@ tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
 writer = writers.MultiWriter([tb_writer, local_writer])
 writer.log_hparams(asdict(config))
 
+if ('mnist' in config.dataset) or ('celeba' in config.dataset):
+    plot_func = plot_prior_image
+else:
+    plot_func = plot_prior
 
 actions = [
     actions.PeriodicCallback(
@@ -234,8 +261,8 @@ actions = [
         callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
     ),
     actions.PeriodicCallback(
-        every_steps=config.total_steps // 5,
-        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_prior(kwargs["state"], kwargs["key"]))
+        every_steps=1000, # config.total_steps // 5,
+        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
     )
     # ml_tools.actions.PeriodicCallback(
     #     every_steps=None if is_smoketest(config) else num_steps // 4,
