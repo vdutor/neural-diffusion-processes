@@ -118,7 +118,7 @@ class GaussianDiffusion:
             y_context,
             mask_context,
             model_fn: EpsModel,
-            num_inner_steps: int = 10,
+            num_inner_steps: int = 5,
         ):
 
         if mask is None:
