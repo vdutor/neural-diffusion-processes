@@ -22,7 +22,7 @@ class OptimizerConfig:
 
 @dataclass
 class NetworkConfig:
-    n_layers: int = 3
+    n_layers: int = 2
     hidden_dim: int = 128
     num_heads: int = 8
 

@@ -35,7 +35,7 @@ from neural_diffusion_processes.gp import predict
 from config import Config
 
 
-EXPERIMENT = "regression-May23-2"
+EXPERIMENT = "regression-May24"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent

@@ -118,7 +118,7 @@ class GaussianDiffusion:
             y_context,
             mask_context,
             model_fn: EpsModel,
-            num_inner_steps: int = 5,
+            num_inner_steps: int = 25,
         ):
 
         if mask is None:
@@ -132,7 +132,7 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        g = 3e-4
+        g = 2e-4
 
         @jax.jit
         def inner(y, inputs):
