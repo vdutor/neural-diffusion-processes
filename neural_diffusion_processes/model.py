@@ -95,7 +95,7 @@ class MultiHeadAttention(hk.Module):
         "v: [batch..., seq_len_k, dim_v]",
         "k: [batch..., seq_len_k, dim_k]",
         "q: [batch..., seq_len_q, dim_q]",
-        "mask: [batch..., seq_len_q] if mask is not None",
+        "mask: [broadcast batch..., seq_len_q] if mask is not None",
         "return: [batch..., seq_len_q, hidden_dim]"
     )
     def __call__(self, v, k, q, mask=None):
@@ -231,7 +231,7 @@ class BiDimensionalAttentionModel(hk.Module):
 
     @check_shapes(
         "x: [batch_size, seq_len, input_dim]",
-        "y: [batch_size, seq_len, 1]",
+        "y: [batch_size, seq_len, output_dim]",
         "return: [batch_size, seq_len, input_dim, 2]",
     )
     def process_inputs(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
