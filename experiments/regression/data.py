@@ -3,7 +3,6 @@ from typing import Tuple, List, Callable, Mapping, Optional
 
 import abc
 from dataclasses import dataclass
-import jaxkern
 import jax
 import gpjax
 import jax.numpy as jnp
@@ -93,7 +92,7 @@ class FuntionalDistribution(abc.ABC):
 
 class GPFunctionalDistribution(FuntionalDistribution):
 
-    def __init__(self, kernel: jaxkern.base.AbstractKernel, params: Mapping):
+    def __init__(self, kernel: gpjax.kernels.base.AbstractKernel, params: Mapping):
         self.kernel = kernel
         self.params = params
         self.mean = gpjax.mean_functions.Zero()
@@ -119,9 +118,9 @@ def register_dataset_factory(name: str):
     
 @register_dataset_factory("se")
 def _se_dataset_factory(active_dim: List[int]):
-    rbf = jaxkern.stationary.RBF(active_dims=active_dim)
-    white = jaxkern.White(active_dims=active_dim)
-    kernel = jaxkern.SumKernel([rbf, white])
+    rbf = gpjax.kernels.stationary.RBF(active_dims=active_dim)
+    white = gpjax.kernels.White(active_dims=active_dim)
+    kernel = gpjax.kernels.SumKernel([rbf, white])
     params = {
         "mean_function": {},
         "kernel": [
@@ -135,9 +134,9 @@ def _se_dataset_factory(active_dim: List[int]):
 
 @register_dataset_factory("matern")
 def _matern_dataset_factory(active_dim: List[int]):
-    mat = jaxkern.stationary.Matern52(active_dims=active_dim)
-    white = jaxkern.White(active_dims=active_dim)
-    kernel = jaxkern.SumKernel([mat, white])
+    mat = gpjax.kernels.stationary.Matern52(active_dims=active_dim)
+    white = gpjax.kernels.White(active_dims=active_dim)
+    kernel = gpjax.kernels.SumKernel([mat, white])
     params = {
         "mean_function": {},
         "kernel": [
