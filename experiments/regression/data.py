@@ -209,11 +209,16 @@ def get_batch(key, batch_size: int, name: str, task: str, input_dim: int):
         max_n_context = 0
     else:
         max_n_target = _DATASET_CONFIGS[name].eval_num_target.upper
-        max_n_context = _DATASET_CONFIGS[name].eval_num_context.upper
+        max_n_context = _DATASET_CONFIGS[name].eval_num_context.upper * input_dim
 
     key, ckey, tkey = jax.random.split(key, 3)
     task = _TASK_CONFIGS[task]
     x_context = task.x_context_dist.sample(seed=ckey, sample_shape=(batch_size, max_n_context, input_dim))
+
+    # if task is "training":
+    #     mask_context = None
+    # else:
+    #     mask_context = 
 
     x_target = task.x_target_dist.sample(seed=tkey, sample_shape=(batch_size, max_n_target, input_dim))
     x = jnp.concatenate([x_context, x_target], axis=1)

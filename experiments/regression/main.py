@@ -31,10 +31,11 @@ from neural_diffusion_processes.utils import writers
 from neural_diffusion_processes.utils import actions
 from neural_diffusion_processes.gp import predict
 
+
 from config import Config
 
 
-EXPERIMENT = "regression-May23"
+EXPERIMENT = "regression-May23-2"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -105,7 +106,7 @@ config: Config = setup_config(Config)
 
 ds_train: Dataset = get_data(
     config.dataset,
-    input_dim=1,
+    input_dim=config.input_dim,
     train=True,
     batch_size=config.batch_size,
     num_epochs=config.num_epochs,
@@ -222,6 +223,7 @@ def sample_conditional(state: TrainingState, key: Rng):
 
 
 def plots(state: TrainingState, key: Rng):
+    if config.input_dim != 1: return {}  # only plot for 1D inputs
     # prior
     fig_prior, ax = plt.subplots()
     x, y0 = jax.vmap(lambda k: sample_prior(state, k))(jax.random.split(key, 10))
@@ -244,79 +246,171 @@ if (experiment_dir_if_exists / "checkpoints").exists():
         state = state_utils.load_checkpoint(state, str(experiment_dir_if_exists), step_index=index)
         print("Restored checkpoint at step {}".format(state.step))
 else:
-    print("Training new model")
-    
 
-exp_root_dir = get_experiment_dir(config)
-local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
-tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
-# aim_writer = writers.AimWriter(EXPERIMENT)
-writer = writers.MultiWriter([tb_writer, local_writer])
-writer.log_hparams(asdict(config))
+    exp_root_dir = get_experiment_dir(config)
+    local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
+    tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
+    aim_writer = writers.AimWriter(EXPERIMENT)
+    writer = writers.MultiWriter([aim_writer, tb_writer, local_writer])
+    writer.log_hparams(asdict(config))
 
 
-actions = [
-    actions.PeriodicCallback(
-        every_steps=10,
-        callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
-    ),
-    actions.PeriodicCallback(
-        # every_steps=config.total_steps // 20,
-        every_steps=config.steps_per_epoch,
-        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
-    ),
-    actions.PeriodicCallback(
-        every_steps=config.total_steps // 2,
-        callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
-    ),
-    # ml_tools.actions.PeriodicCallback(
-    #     every_steps=None if is_smoketest(config) else num_steps // 4,
-    #     callback_fn=lambda step, t, **kwargs: [
-    #         cb(step, t, **kwargs) for cb in task_callbacks
-    #     ]
-    # ),
-]
+    actions = [
+        actions.PeriodicCallback(
+            every_steps=10,
+            callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
+        ),
+        actions.PeriodicCallback(
+            every_steps=config.total_steps // 10,
+            callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
+        ),
+        actions.PeriodicCallback(
+            every_steps=config.total_steps // 2,
+            callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
+        ),
+        # ml_tools.actions.PeriodicCallback(
+        #     every_steps=None if is_smoketest(config) else num_steps // 4,
+        #     callback_fn=lambda step, t, **kwargs: [
+        #         cb(step, t, **kwargs) for cb in task_callbacks
+        #     ]
+        # ),
+    ]
 
-progress_bar = tqdm.tqdm(list(range(state.step + 1, config.total_steps + 1)), miniters=1)
+    progress_bar = tqdm.tqdm(list(range(state.step + 1, config.total_steps + 1)), miniters=1)
 
-for step in progress_bar:
-    if step < state.step: continue  # wait for the state to catch up in case of restarts
+    for step in progress_bar:
+        if step < state.step: continue  # wait for the state to catch up in case of restarts
 
-    batch = next(ds_train)
+        batch = next(ds_train)
 
-    state, metrics = update_step(state, batch)
-    metrics["lr"] = learning_rate_schedule(state.step)
+        state, metrics = update_step(state, batch)
+        metrics["lr"] = learning_rate_schedule(state.step)
 
-    for action in actions:
-        action(step, t=None, metrics=metrics, state=state, key=key)
+        for action in actions:
+            action(step, t=None, metrics=metrics, state=state, key=key)
 
-    if step % 100 == 0:
-        progress_bar.set_description(f"loss {metrics['loss']:.2f}")
-    
+        if step % 100 == 0:
+            progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+        
+
+print("EVALUATION")
 
 
+import gpjax
+import jaxlinop
+from functools import partial
+from gpjax.gaussian_distribution import GaussianDistribution
 
-fig_cond, ax = plt.subplots()
-x, y0, xc, yc = jax.vmap(lambda k: sample_conditional(state, k))(jax.random.split(key, 5))
-ax.plot(x[...,0].T, y0[...,0].T, "C0", alpha=0.5)
-ax.plot(xc[...,0].T, yc[...,0].T, "C3.")
-
-from gpjax import Prior
 from data import _DATASET_FACTORIES
 
-gp = _DATASET_FACTORIES[config.dataset](list(range(1)))
-xx = np.linspace(-2, 2, 200)[None, :, None]
-post = predict(gp.prior, gp.params, (xc[0], yc[0]))(x[0])
-m, v = post.mean(), post.variance()
-print(m.shape)
-print(v.shape)
-
-s = post.sample(seed=key, sample_shape=(5,))
-s += gp.params["noise_variance"] ** 0.5 * np.random.randn(*s.shape)
-print(s.shape)
-ax.plot(x[0], m, "k", lw=2)
-ax.plot(x[0], s.T, "k", alpha=.3)
-ax.fill_between(x[0].ravel(), m - 2 * v, m + 2 * v, color="k", alpha=0.1)
+net_with_params = partial(net, state.params_ema)
+n_samples = 128
 
 
-plt.savefig("conditional.png")
+
+@jax.jit
+@partial(jax.vmap, in_axes=(0, None, None, None, None))
+def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
+    print("compiling eval_multiple_conditional")
+    return process.conditional_sample(
+        key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
+
+
+@jax.jit
+@partial(jax.vmap, in_axes=(None, 0, 0, 0, 0, 0))
+def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
+    print("compiling eval_conditional")
+    samples = sample_n_conditionals(jax.random.split(key, n_samples), x_test, x_context, y_context, mask_context)
+    samples = samples.squeeze(axis=-1)
+    mean = jnp.mean(samples, axis=0)
+    centered_samples = samples - mean
+    covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
+    post = GaussianDistribution(
+        loc=mean.squeeze(),
+        scale=jaxlinop.DenseLinearOperator(covariance),
+    )
+    ll = post.log_prob(y_test.squeeze()) / len(x_test)
+    mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
+    return {"mse": mse, "ll": ll}
+
+
+true_gp = _DATASET_FACTORIES[config.dataset](list(range(config.input_dim)))
+
+
+@partial(jax.vmap, in_axes=(0, 0, 0, 0, 0))
+def eval_conditional_gp(x_test, y_test, x_context, y_context, mask_context):
+    print("compiling eval_conditional_gp")
+    x_context = x_context + mask_context[:, None] * 1e3
+    post = predict(true_gp.prior, true_gp.params, (x_context, y_context))(x_test)
+    ll =  post.log_prob(y_test.squeeze()) / len(x_test)
+    mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
+    return {"mse": mse, "ll": ll}
+
+
+ds_test = get_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=False,
+    batch_size=config.batch_size,
+    num_epochs=1,
+)
+import time
+for i in range(5):
+    batch = next(ds_test)
+    print(batch.x_target.shape)
+    mask_context = jnp.zeros_like(batch.x_context[..., 0])
+
+    # m, v, ll = eval_conditional_gp(batch.x_target, batch.y_target, batch.x_context, batch.y_context, mask_context)
+    t0 = time.time()
+    m, v, ll = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, mask_context)
+    print(time.time() - t0)
+    print(ll)
+    fig, axes = plt.subplots(2,2)
+    axes = np.array(axes).flatten()
+    for i, ax in enumerate(axes):
+        ax.plot(batch.x_target[i], m[i], "C0.")
+        ax.plot(batch.x_target[i], m[i] + 2 * v[i]**.5, "C0.", alpha=.2)
+        ax.plot(batch.x_target[i], m[i] - 2 * v[i]**.5, "C0.", alpha=.2)
+        ax.plot(batch.x_context[i], batch.y_context[i], "C1.")
+        ax.plot(batch.x_target[i], batch.y_target[i], "C3.")
+    plt.savefig(f"ndp_{i}.png")
+
+
+exit(0)
+
+ll_gp = eval_conditional_gp(batch.x_target, batch.y_target, batch.x_context, batch.y_context, mask_context)
+print(ll_gp)
+print(jnp.mean(ll_gp))
+
+ll_ndp = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, mask_context)
+print(ll_ndp)
+print(jnp.mean(ll_ndp))
+
+
+
+
+
+# fig_cond, ax = plt.subplots()
+# x, y0, xc, yc = jax.vmap(lambda k: sample_conditional(state, k))(jax.random.split(key, 5))
+# ax.plot(x[...,0].T, y0[...,0].T, "C0", alpha=0.5)
+# ax.plot(xc[...,0].T, yc[...,0].T, "C3.")
+
+# from gpjax import Prior
+# from data import _DATASET_FACTORIES
+
+# gp = _DATASET_FACTORIES[config.dataset](list(range(1)))
+# xx = np.linspace(-2, 2, 200)[None, :, None]
+# post = predict(gp.prior, gp.params, (xc[0], yc[0]))(x[0])
+# m, v = post.mean(), post.variance()
+# print(m.shape)
+# print(v.shape)
+
+# s = post.sample(seed=key, sample_shape=(5,))
+# s += gp.params["noise_variance"] ** 0.5 * np.random.randn(*s.shape)
+# print(s.shape)
+# ax.plot(x[0], m, "k", lw=2)
+# ax.plot(x[0], s.T, "k", alpha=.3)
+# ax.fill_between(x[0].ravel(), m - 2 * v, m + 2 * v, color="k", alpha=0.1)
+
+
+# plt.savefig("conditional.png")

@@ -13,8 +13,8 @@ from tqdm import tqdm
 from data import get_batch, DATASETS, TASKS, _DATASET_CONFIGS
 # %%
 
-BATCH_SIZE = 1024
-DATASET_SIZE = int(2**14)
+BATCH_SIZE = 64
+DATASET_SIZE = {"training": int(2**14), "interpolation": 128}
 SEED = 0
 key = jax.random.PRNGKey(SEED)
 
@@ -25,7 +25,7 @@ for dataset, task in product(DATASETS, TASKS):
         jitted_get_batch = jax.jit(lambda k: get_batch(k, batch_size=BATCH_SIZE, name=dataset, task=task, input_dim=input_dim))
 
         batches = []
-        for i in tqdm(range(DATASET_SIZE // BATCH_SIZE)):
+        for i in tqdm(range(DATASET_SIZE[task] // BATCH_SIZE)):
             key, bkey = jax.random.split(key)
             batch = jitted_get_batch(bkey)
             batches.append(batch)

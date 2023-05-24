@@ -95,7 +95,7 @@ class MultiHeadAttention(hk.Module):
         "v: [batch..., seq_len_k, dim_v]",
         "k: [batch..., seq_len_k, dim_k]",
         "q: [batch..., seq_len_q, dim_q]",
-        "mask: [batch..., seq_len_q] if mask is not None",
+        "mask: [broadcast batch..., seq_len_q] if mask is not None",
         "return: [batch..., seq_len_q, hidden_dim]"
     )
     def __call__(self, v, k, q, mask=None):

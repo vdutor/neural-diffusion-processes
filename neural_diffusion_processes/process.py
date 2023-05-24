@@ -118,7 +118,7 @@ class GaussianDiffusion:
             y_context,
             mask_context,
             model_fn: EpsModel,
-            num_innner_steps: int = 50,
+            num_inner_steps: int = 10,
         ):
 
         if mask is None:
@@ -132,7 +132,7 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        g = 1e-4
+        g = 3e-4
 
         @jax.jit
         def inner(y, inputs):
@@ -157,8 +157,9 @@ class GaussianDiffusion:
             y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y_augmented, t=t)
 
             y = y[num_context:]
-            ts = jnp.ones((num_innner_steps,), dtype=jnp.int32) * (t - 1)
-            keys = jax.random.split(lkey, num_innner_steps)
+            # num_inner_steps = jax.lax.cond(t < 10, lambda _: 50, lambda _: 5, None)
+            ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * (t - 1)
+            keys = jax.random.split(lkey, num_inner_steps)
             y, _ = jax.lax.scan(inner, y, (ts, keys))
 
             return y, None

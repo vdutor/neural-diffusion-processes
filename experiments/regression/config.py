@@ -34,6 +34,7 @@ class Config:
     samples_per_epoch: int = int(2**14)
     loss_type: str = "l1"
     dataset: str = "se"
+    input_dim: int = 1
     network: NetworkConfig = NetworkConfig()
     schedule: DiffusionConfig = DiffusionConfig()
     diffusion: DiffusionConfig = DiffusionConfig()
