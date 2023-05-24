@@ -190,9 +190,8 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
 
 
 @jax.jit
-def sample_prior(state: TrainingState, key: Rng):
+def sample_prior(state: TrainingState, key: Rng, x: jnp.array):
     print("compiling sample_prior")
-    x = jnp.linspace(-2, 2, 60)[:, None]
     key, ykey, bkey  = jax.random.split(key, 3)
     yT = jax.random.normal(ykey, (len(x), 1))
     net_with_params = partial(net, state.params_ema)
@@ -202,7 +201,8 @@ def sample_prior(state: TrainingState, key: Rng):
 
 def plot_prior(state: TrainingState, key: Rng):
     fig, ax = plt.subplots()
-    x, y0 = jax.vmap(lambda k: sample_prior(state, k))(jax.random.split(key, 10))
+    x = jnp.linspace(-2, 2, 60)[:, None]
+    x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
     ax.plot(x[...,0].T, y0[...,0].T, color="C0", alpha=0.5)
     return {"prior": fig}
 
