@@ -139,24 +139,30 @@ def get_image_data(
     image_col: str = "image",
     batch_size: int = 1024,
     num_epochs: int = 1,
+    train: bool = True,
 ):
-    celeb_dataset = datasets.load_dataset(dataset_name)
-    celeb_dataset.set_format('tensorflow')
-    celeb_images_dataset = celeb_dataset.select_columns(image_col)
-    celeb_tf_dataset = celeb_images_dataset['train'].to_tf_dataset(batch_size=batch_size, shuffle=True)
+    if train:
+        subset = 'train'
+    else:
+        subset = 'test'
+
+    images_dataset = datasets.load_dataset(dataset_name)
+    images_dataset.set_format('tensorflow')
+    images_dataset = images_dataset.select_columns(image_col)
+    images_tf_dataset = images_dataset[subset].to_tf_dataset(batch_size=batch_size, shuffle=True)
     AUTOTUNE = tf.data.experimental.AUTOTUNE
     # NOTE: This this will revisit the data in the same order in each epoch, but will still have
     # random masking for each which will differ between epochs
-    celeb_tf_dataset = celeb_tf_dataset.repeat(count=num_epochs)
-    processed_celeb_tf_dataset = celeb_tf_dataset.map(add_image_channel_if_missing)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(transform_image)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(create_xy_inputs)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(split_into_target_and_context)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(delete_unused_columns)
-    #processed_celeb_tf_dataset = processed_celeb_tf_dataset.map(add_mask)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.prefetch(AUTOTUNE)
-    processed_celeb_tf_dataset = processed_celeb_tf_dataset.as_numpy_iterator()
-    processed_celeb_batch_dataset = map(lambda d: Batch(**d), processed_celeb_tf_dataset)
+    images_tf_dataset = images_tf_dataset.repeat(count=num_epochs)
+    processed_images_tf_dataset = images_tf_dataset.map(add_image_channel_if_missing)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(transform_image)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(create_xy_inputs)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(split_into_target_and_context)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(delete_unused_columns)
+    #processed_images_tf_dataset = processed_images_tf_dataset.map(add_mask)
+    processed_images_tf_dataset = processed_images_tf_dataset.prefetch(AUTOTUNE)
+    processed_images_tf_dataset = processed_images_tf_dataset.as_numpy_iterator()
+    processed_celeb_batch_dataset = map(lambda d: Batch(**d), processed_images_tf_dataset)
     return processed_celeb_batch_dataset
 
 
