@@ -177,7 +177,7 @@ def get_image_data(
     processed_images_tf_dataset = processed_images_tf_dataset.map(create_xy_inputs)
     processed_images_tf_dataset = processed_images_tf_dataset.map(split_batch_into_target_and_context)
     processed_images_tf_dataset = processed_images_tf_dataset.map(delete_unused_columns)
-    #processed_images_tf_dataset = processed_images_tf_dataset.map(add_mask)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(add_mask)
     processed_images_tf_dataset = processed_images_tf_dataset.prefetch(AUTOTUNE)
     processed_images_tf_dataset = processed_images_tf_dataset.as_numpy_iterator()
     processed_celeb_batch_dataset = map(lambda d: Batch(**d), processed_images_tf_dataset)
