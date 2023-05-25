@@ -1,6 +1,7 @@
 import datasets
 import tensorflow as tf
 from neural_diffusion_processes.types import Batch
+from functools import partial
 
 
 def unflatten_image(flattened_image: tf.Tensor, orig_image_shape: tf.TensorShape) -> tf.Tensor:
@@ -143,8 +144,10 @@ def get_image_data(
 ):
     if train:
         subset = 'train'
+        split_batch_into_target_and_context = partial(split_into_target_and_context, number_of_context=(0.0,))
     else:
         subset = 'test'
+        split_batch_into_target_and_context = split_into_target_and_context
 
     images_dataset = datasets.load_dataset(dataset_name)
     images_dataset.set_format('tensorflow')
@@ -157,7 +160,7 @@ def get_image_data(
     processed_images_tf_dataset = images_tf_dataset.map(add_image_channel_if_missing)
     processed_images_tf_dataset = processed_images_tf_dataset.map(transform_image)
     processed_images_tf_dataset = processed_images_tf_dataset.map(create_xy_inputs)
-    processed_images_tf_dataset = processed_images_tf_dataset.map(split_into_target_and_context)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(split_batch_into_target_and_context)
     processed_images_tf_dataset = processed_images_tf_dataset.map(delete_unused_columns)
     #processed_images_tf_dataset = processed_images_tf_dataset.map(add_mask)
     processed_images_tf_dataset = processed_images_tf_dataset.prefetch(AUTOTUNE)
