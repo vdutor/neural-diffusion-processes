@@ -191,7 +191,8 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
     )
     metrics = {
         'loss': loss_value,
-        'step': state.step
+        'step': state.step,
+        'data_seen': (state.step + 1) * batch.x_target.shape[0],
     }
     return new_state, metrics
 
