@@ -118,7 +118,7 @@ class GaussianDiffusion:
             y_context,
             mask_context,
             model_fn: EpsModel,
-            num_inner_steps: int = 50,
+            num_inner_steps: int = 5,
         ):
 
         if mask is None:
@@ -161,18 +161,18 @@ class GaussianDiffusion:
             ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * (t - 1)
             keys = jax.random.split(lkey, num_inner_steps)
             y, _ = jax.lax.scan(inner, y, (ts, keys))
-
             return y, None
+
 
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))
         yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
-        yf, yt = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
-        return yt if yt is not None else yf
+        y, _ = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
 
-
-
-
+        ts = jnp.zeros((100,), dtype=jnp.int32)
+        keys = jax.random.split(key, len(ts))
+        y, _ = jax.lax.scan(inner, y, (ts, keys))
+        return y
 
 
 def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, *, num_timesteps: int, loss_type: str = "l1"):

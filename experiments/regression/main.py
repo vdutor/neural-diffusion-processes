@@ -35,7 +35,7 @@ from neural_diffusion_processes.gp import predict
 from config import Config
 
 
-EXPERIMENT = "regression-May24-2"
+EXPERIMENT = "regression-May25-2"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -299,6 +299,8 @@ import jaxlinop
 from functools import partial
 from gpjax.gaussian_distribution import GaussianDistribution
 
+from jax.config import config as jax_config
+jax_config.update("jax_enable_x64", True)
 
 net_with_params = partial(net, state.params_ema)
 n_samples = config.eval.num_samples
@@ -319,6 +321,7 @@ def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
     mean = jnp.mean(samples, axis=0)
     centered_samples = samples - mean
     covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
+    covariance = covariance + jnp.eye(covariance.shape[0]) * 1e-6
     post = GaussianDistribution(
         loc=mean.squeeze(),
         scale=jaxlinop.DenseLinearOperator(covariance),

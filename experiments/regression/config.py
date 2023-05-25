@@ -39,7 +39,7 @@ class Config:
     dataset: str = "se"
     input_dim: int = 1
     batch_size: int = 32
-    num_epochs: int = 100
+    num_epochs: int = 250
     samples_per_epoch: int = int(2**14)
     loss_type: str = "l1"
     eval: EvalConfig = EvalConfig()
