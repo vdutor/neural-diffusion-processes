@@ -12,7 +12,7 @@ class DiffusionConfig:
 
 @dataclass
 class OptimizerConfig:
-    num_warmup_epochs: int = 10
+    num_warmup_epochs: int = 20
     num_decay_epochs: int = 200
     init_lr: float = 2e-5
     peak_lr: float = 1e-3
@@ -22,8 +22,8 @@ class OptimizerConfig:
 
 @dataclass
 class NetworkConfig:
-    n_layers: int = 3
-    hidden_dim: int = 128
+    n_layers: int = 2
+    hidden_dim: int = 64
     num_heads: int = 8
 
 
