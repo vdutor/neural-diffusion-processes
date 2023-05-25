@@ -35,7 +35,7 @@ from neural_diffusion_processes.gp import predict
 from config import Config
 
 
-EXPERIMENT = "regression-May24"
+EXPERIMENT = "regression-May24-2"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -90,7 +90,7 @@ def get_data(
         "x_context": data["x_context"].astype(np.float32),
         "y_context": data["y_context"].astype(np.float32),
         "mask_context": data["mask_context"].astype(np.float32),
-        "mask_target": data["mask_target"].astype(np.float32),
+        # "mask_target": data["mask_target"].astype(np.float32),
     })
     if train:
         ds = ds.repeat(count=num_epochs)
@@ -258,7 +258,7 @@ else:
             callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
         ),
         actions.PeriodicCallback(
-            every_steps=config.total_steps // 4,
+            every_steps=config.total_steps // 8,
             callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
         ),
         actions.PeriodicCallback(
@@ -329,6 +329,13 @@ def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
     return {"mse": mse, "ll": ll, "nc": num_context}
 
 
+def summary_stats(metrics):
+    err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+    summary_stats = [ ("mean", jnp.mean), ("std", jnp.std), ("err", err) ]
+    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+    return metrics
+
+
 ds_test = get_data(
     config.dataset,
     input_dim=config.input_dim,
@@ -337,20 +344,18 @@ ds_test = get_data(
     num_epochs=1,
 )
 
+
+
 metrics = {"mse": [], "ll": [], "nc": []}
 
 for batch in tqdm.tqdm(ds_test, total=128 // config.eval.batch_size):
     m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
     for k, v in m.items():
         metrics[k].append(v)
+    summary = summary_stats(metrics)
+    pprint.pprint(summary)
 
-err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
-summary_stats = [
-    ("mean", jnp.mean),
-    ("std", jnp.std),
-    ("err", err)
-]
-metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+metrics = summary_stats(metrics)
 pprint.pprint(metrics)
 if writer is not None:
     writer.write_scalars(config.num_epochs + 1, metrics)

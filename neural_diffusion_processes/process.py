@@ -118,7 +118,7 @@ class GaussianDiffusion:
             y_context,
             mask_context,
             model_fn: EpsModel,
-            num_inner_steps: int = 25,
+            num_inner_steps: int = 50,
         ):
 
         if mask is None:
@@ -132,7 +132,7 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        g = 2e-4
+        g = 1e-4
 
         @jax.jit
         def inner(y, inputs):
@@ -189,7 +189,7 @@ def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, 
         yt, noise = process.forward(key, y, t)
         noise_hat = network(t, yt, x, mask, key=key)
         l = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
-        l = l * (1. - mask[:, None])
+        l = l * (1. - mask)
         num_points = len(mask) - jnp.count_nonzero(mask)
         return jnp.sum(l) / num_points
 
