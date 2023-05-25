@@ -91,10 +91,10 @@ def create_xy_grid_features_from_single_image(num_pixels_x: int, num_pixels_y: i
     return xx_yy_grid_flat
 
 
-def create_xy_meshgrid(num_pixels_x, num_pixels_y):
+def create_xy_meshgrid(num_pixels_x, num_pixels_y, minval=-5, maxval=5):
     """ Create an x-y meshgrid, where x=0, y=0 is the bottom left hand pixel of the image"""
-    centred_x_grid = tf.linspace(start=1, stop=-1, num=num_pixels_x)
-    centred_y_grid = tf.linspace(start=-1, stop=1, num=num_pixels_y)
+    centred_x_grid = tf.linspace(start=maxval, stop=minval, num=num_pixels_x)
+    centred_y_grid = tf.linspace(start=minval, stop=maxval, num=num_pixels_y)
     # assert centred_x_grid.shape[0] == num_pixels_x
     # assert centred_y_grid.shape[0] == num_pixels_y
     centred_xx_grid, centred_yy_grid = tf.meshgrid(centred_x_grid, centred_y_grid)
@@ -154,6 +154,7 @@ def get_image_data(
 
     if 'mnist' in dataset_name:
         # NOTE - this is normalised for the average pixel values for MNIST across the whole dataset
+        print("normalising")
         pixel_mean = -0.7409841
         pixel_std = math.sqrt(0.38553977)
         normalise_image_map = partial(normalise_image, pixel_mean=pixel_mean, pixel_std=pixel_std)
