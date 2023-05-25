@@ -189,7 +189,9 @@ def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, 
         yt, noise = process.forward(key, y, t)
         noise_hat = network(t, yt, x, mask, key=key)
         l = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
-        return jnp.mean(l)
+        l = l * (1. - mask[:, None])
+        num_points = len(mask) - jnp.count_nonzero(mask)
+        return jnp.mean(l) / num_points
 
     batch_size = len(batch.x_target)
 
