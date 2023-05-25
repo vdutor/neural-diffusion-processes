@@ -307,7 +307,7 @@ else:
             callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
         ),
         actions.PeriodicCallback(
-            every_steps=6000, # config.total_steps // 2,
+            every_steps=config.total_steps // 2,
             callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
         ),
     ]
