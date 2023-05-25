@@ -246,7 +246,7 @@ def plot_prior_image(state: TrainingState, key: Rng):
         num_pixels_x=num_pixels_x, num_pixels_y=num_pixels_y
     )
     x = jnp.array(x_tf.numpy())
-    x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
+    x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 3))
     y0_reshape = unflatten_image(y0, orig_image_shape=(num_pixels_x, num_pixels_y, num_channels))
     ax[0].imshow(y0_reshape[0, ...])
     ax[1].imshow(y0_reshape[1, ...])
@@ -403,3 +403,6 @@ metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in s
 pprint.pprint(metrics)
 if writer is not None:
     writer.write_scalars(config.num_epochs + 1, metrics)
+
+import time
+time.sleep(60)
