@@ -1,5 +1,6 @@
 from typing import Mapping, Tuple
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "2"
 import string
 import random
 import datetime
@@ -301,11 +302,11 @@ else:
             callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
         ),
         actions.PeriodicCallback(
-            every_steps=config.total_steps // 4,
+            every_steps=2000, #config.total_steps // 4,
             callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
         ),
         actions.PeriodicCallback(
-            every_steps=config.total_steps // 2,
+            every_steps=6000, # config.total_steps // 2,
             callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
         ),
     ]
