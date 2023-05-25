@@ -2,6 +2,7 @@ import datasets
 import tensorflow as tf
 from neural_diffusion_processes.types import Batch
 from functools import partial
+import math
 
 
 def unflatten_image(flattened_image: tf.Tensor, orig_image_shape: tf.TensorShape) -> tf.Tensor:
@@ -19,7 +20,7 @@ def unflatten_image(flattened_image: tf.Tensor, orig_image_shape: tf.TensorShape
     return unflattened_image
 
 
-def flatten_images(image: tf.Tensor):
+def _flatten_images(image: tf.Tensor):
     """ utility function to flatten images, assuming batch dimension """
     num_batches, num_pixels_x, num_pixels_y, num_channels = get_image_info(image)
     flat_image = tf.transpose(image, (0, 3, 2, 1))
@@ -37,12 +38,15 @@ def get_image_info(image: tf.Tensor):
     return num_batches, num_pixels_x, num_pixels_y, num_channels
 
 
-def normalise_image(image: tf. Tensor) -> tf.Tensor:
+def normalise_image(example, pixel_mean: float = 0.0, pixel_std: float = 1.0) -> tf.Tensor:
     """ Convert image values to be [-1, 1] """
+    image = example['image']
     converted_image = tf.cast(image, tf.float32)
     normalised_image = converted_image / 255
     normalised_image = 2.0 * (normalised_image - 0.5)
-    return normalised_image
+    normalised_image = (normalised_image - pixel_mean) / pixel_std
+    example['image'] = normalised_image
+    return example
 
 
 def add_image_channel_if_missing(example):
@@ -53,12 +57,11 @@ def add_image_channel_if_missing(example):
     return example
 
 
-def transform_image(example):
-    """ Normalise and flatten image """
+def flatten_images(example):
+    """ Flatten image """
     image = example['image']
-    normalised_image = normalise_image(image)
-    flattened_normalised_image = flatten_images(normalised_image)
-    example['flat_image'] = flattened_normalised_image
+    flattened_image = _flatten_images(image)
+    example['flat_image'] = flattened_image
     return example
 
 
@@ -149,6 +152,15 @@ def get_image_data(
         subset = 'test'
         split_batch_into_target_and_context = split_into_target_and_context
 
+    if 'mnist' in dataset_name:
+        # NOTE - this is normalised for the average pixel values for MNIST across the whole dataset
+        pixel_mean = -0.7409841
+        pixel_std = math.sqrt(0.38553977)
+        normalise_image_map = partial(normalise_image, pixel_mean=pixel_mean, pixel_std=pixel_std)
+    else:
+        print("WARNING: No mean and std calculated")
+        normalise_image_map = normalise_image
+
     images_dataset = datasets.load_dataset(dataset_name)
     images_dataset.set_format('tensorflow')
     images_dataset = images_dataset.select_columns(image_col)
@@ -158,7 +170,8 @@ def get_image_data(
     # random masking for each which will differ between epochs
     images_tf_dataset = images_tf_dataset.repeat(count=num_epochs)
     processed_images_tf_dataset = images_tf_dataset.map(add_image_channel_if_missing)
-    processed_images_tf_dataset = processed_images_tf_dataset.map(transform_image)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(normalise_image_map)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(flatten_images)
     processed_images_tf_dataset = processed_images_tf_dataset.map(create_xy_inputs)
     processed_images_tf_dataset = processed_images_tf_dataset.map(split_batch_into_target_and_context)
     processed_images_tf_dataset = processed_images_tf_dataset.map(delete_unused_columns)
@@ -170,9 +183,9 @@ def get_image_data(
 
 
 if __name__ == '__main__':
-    dataset_name = "lansinuote/gen.1.celeba"
+    dataset_name = "mnist"
     print(dataset_name)
-    image_data = get_image_data(dataset_name=dataset_name)
+    image_data = get_image_data(dataset_name=dataset_name, train=True, batch_size=1000)
     for i in range(10):
         data = next(image_data)
         print(f"x_target: {data.x_target.shape}")
@@ -182,3 +195,19 @@ if __name__ == '__main__':
         if data.mask_target is not None:
             print(f"mask_target: {data.mask_target.shape}")
             print(f"mask_context: {data.mask_context.shape}")
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(1, 1)
+        # ax.scatter(
+        #     data.x_context[0, :, 0],
+        #     data.x_context[0, :, 1],
+        #     c=data.y_context[0, :, 0],
+        # )
+        ax.scatter(
+            data.x_target[0, :, 0],
+            data.x_target[0, :, 1],
+            c=data.y_target[0, :, 0],
+        )
+        print(data.y_target.mean())
+        print(data.y_target.var())
+        fig.show()
