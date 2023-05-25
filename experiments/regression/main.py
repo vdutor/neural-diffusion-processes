@@ -405,5 +405,4 @@ if writer is not None:
     writer.write_scalars(config.num_epochs + 1, metrics)
 
 import time
-
 time.sleep(60)
