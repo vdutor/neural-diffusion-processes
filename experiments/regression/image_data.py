@@ -97,7 +97,7 @@ def create_xy_meshgrid(num_pixels_x, num_pixels_y):
     return centred_xx_grid, centred_yy_grid
 
 
-def split_into_target_and_context(example, number_of_context=(0.1, 0.2, 0.5)):
+def split_into_target_and_context(example, number_of_context=(0.9, 0.8, 0.5)):
     total_num_pixels = tf.shape(example['flat_image'])[-2]
     choice_indices = tf.range(len(number_of_context))
     random_choice_index = tf.random.shuffle(choice_indices)[0]
