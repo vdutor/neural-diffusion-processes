@@ -148,7 +148,7 @@ def get_image_data(
     if train:
         subset = 'train'
         #split_batch_into_target_and_context = partial(split_into_target_and_context, number_of_context=(0.0,))
-        split_batch_into_target_and_context = partial(split_into_target_and_context, number_of_context=(0.9, 0.7, 0.5))
+        split_batch_into_target_and_context = partial(split_into_target_and_context, number_of_context=(0.2,))
     else:
         subset = 'test'
         split_batch_into_target_and_context = split_into_target_and_context
