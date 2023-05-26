@@ -132,7 +132,7 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        g = 3e-4
+        g = 1e-4
 
         @jax.jit
         def inner(y, inputs):
@@ -161,18 +161,18 @@ class GaussianDiffusion:
             ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * (t - 1)
             keys = jax.random.split(lkey, num_inner_steps)
             y, _ = jax.lax.scan(inner, y, (ts, keys))
-
             return y, None
+
 
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))
         yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
-        yf, yt = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
-        return yt if yt is not None else yf
+        y, _ = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
 
-
-
-
+        ts = jnp.zeros((100,), dtype=jnp.int32)
+        keys = jax.random.split(key, len(ts))
+        y, _ = jax.lax.scan(inner, y, (ts, keys))
+        return y
 
 
 def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, *, num_timesteps: int, loss_type: str = "l1"):
@@ -189,7 +189,7 @@ def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, 
         yt, noise = process.forward(key, y, t)
         noise_hat = network(t, yt, x, mask, key=key)
         l = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
-        l = l * (1. - mask[:, None])
+        l = l * (1. - mask)
         num_points = len(mask) - jnp.count_nonzero(mask)
         return jnp.sum(l) / num_points
 

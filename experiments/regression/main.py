@@ -38,7 +38,7 @@ from neural_diffusion_processes.utils import actions
 from config import Config
 
 
-EXPERIMENT = "regression-May23-2"
+EXPERIMENT = "regression-May25-2"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -93,7 +93,7 @@ def get_gp_data(
         "x_context": data["x_context"].astype(np.float32),
         "y_context": data["y_context"].astype(np.float32),
         "mask_context": data["mask_context"].astype(np.float32),
-        "mask_target": data["mask_target"].astype(np.float32),
+        # "mask_target": data["mask_target"].astype(np.float32),
     })
     if train:
         ds = ds.repeat(count=num_epochs)
@@ -303,7 +303,7 @@ else:
             callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
         ),
         actions.PeriodicCallback(
-            every_steps=2000, #config.total_steps // 4,
+            every_steps=2000, #config.total_steps // 8,
             callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
         ),
         actions.PeriodicCallback(
@@ -340,6 +340,8 @@ if config.eval.evaluate:
     from functools import partial
     from gpjax.gaussian_distribution import GaussianDistribution
 
+    from jax.config import config as jax_config
+    jax_config.update("jax_enable_x64", True)
 
     net_with_params = partial(net, state.params_ema)
     n_samples = config.eval.num_samples
@@ -369,6 +371,7 @@ if config.eval.evaluate:
         mean = jnp.mean(samples, axis=0)
         centered_samples = samples - mean
         covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
+        covariance = covariance + jnp.eye(covariance.shape[0]) * 1e-6
         post = GaussianDistribution(
             loc=mean.squeeze(),
             scale=jaxlinop.DenseLinearOperator(covariance),
@@ -377,6 +380,14 @@ if config.eval.evaluate:
         mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
         num_context = len(x_context) - jnp.count_nonzero(mask_context)
         return {"mse": mse, "ll": ll, "nc": num_context}
+
+
+    def summary_stats(metrics):
+        err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+        summary_stats = [ ("mean", jnp.mean), ("std", jnp.std), ("err", err) ]
+        metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+        return metrics
+
 
 
     if ('mnist' in config.dataset) or ('celeba' in config.dataset):
@@ -403,14 +414,11 @@ if config.eval.evaluate:
         m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
         for k, v in m.items():
             metrics[k].append(v)
+    summary = summary_stats(metrics)
+    pprint.pprint(summary)
 
-    err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
-    summary_stats = [
-        ("mean", jnp.mean),
-        ("std", jnp.std),
-        ("err", err)
-    ]
-    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+
+    metrics = summary_stats(metrics)
     pprint.pprint(metrics)
     if writer is not None:
         writer.write_scalars(config.num_epochs + 1, metrics)
