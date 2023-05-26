@@ -247,11 +247,21 @@ def plot_prior_image(state: TrainingState, key: Rng):
     )
     x = jnp.array(x_tf.numpy())
     x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 3))
+
     y0_reshape = unflatten_image(y0, orig_image_shape=(num_pixels_x, num_pixels_y, num_channels))
     ax[0].imshow(y0_reshape[0, ...])
     ax[1].imshow(y0_reshape[1, ...])
     ax[2].imshow(y0_reshape[2, ...])
-    return {"prior": fig}
+
+    fig_scatter, ax_scatter = plt.subplots(1, 3, figsize=(10, 4))
+    for i in range(3):
+        assert num_channels == 1
+        ax_scatter[i].scatter(
+            x[i, :, 0],
+            x[i, :, 1],
+            c=y0[i, :, 0],
+        )
+    return {"prior": fig, "prior_scatter": fig_scatter}
 
 
 batch_init = Batch(
