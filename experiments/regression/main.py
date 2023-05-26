@@ -332,77 +332,85 @@ else:
             progress_bar.set_description(f"loss {metrics['loss']:.2f}")
 
 
-print("EVALUATION")
+if config.eval.evaluate:
+    print("EVALUATION")
+
+    import pprint
+    import jaxlinop
+    from functools import partial
+    from gpjax.gaussian_distribution import GaussianDistribution
 
 
-import pprint
-import jaxlinop
-from functools import partial
-from gpjax.gaussian_distribution import GaussianDistribution
+    net_with_params = partial(net, state.params_ema)
+    n_samples = config.eval.num_samples
+
+    # @jax.jit
+    # def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
+    #     cond_sample_func = partial(
+    #         process.conditional_sample,
+    #         # note, no key argument
+    #         x=x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params
+    #     )
+    #     return jax.lax.map(cond_sample_func, key)
+
+    @jax.jit
+    @partial(jax.vmap, in_axes=(0, None, None, None, None))
+    def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
+        return process.conditional_sample(
+            key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context,
+            model_fn=net_with_params)
 
 
-net_with_params = partial(net, state.params_ema)
-n_samples = config.eval.num_samples
+    @jax.jit
+    @partial(jax.vmap, in_axes=(None, 0, 0, 0, 0, 0))
+    def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
+        samples = sample_n_conditionals(jax.random.split(key, n_samples), x_test, x_context, y_context, mask_context)
+        samples = samples.squeeze(axis=-1)
+        mean = jnp.mean(samples, axis=0)
+        centered_samples = samples - mean
+        covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
+        post = GaussianDistribution(
+            loc=mean.squeeze(),
+            scale=jaxlinop.DenseLinearOperator(covariance),
+        )
+        ll = post.log_prob(y_test.squeeze()) / len(x_test)
+        mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
+        num_context = len(x_context) - jnp.count_nonzero(mask_context)
+        return {"mse": mse, "ll": ll, "nc": num_context}
 
 
-@jax.jit
-@partial(jax.vmap, in_axes=(0, None, None, None, None))
-def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
-    return process.conditional_sample(
-        key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
+    if ('mnist' in config.dataset) or ('celeba' in config.dataset):
+        ds_test: Dataset = get_image_data(
+            dataset_name=config.dataset,
+            batch_size=config.eval.batch_size,
+            num_epochs=1,
+            train=False,
+        )
+    else:
+        ds_test: Dataset = get_gp_data(
+            dataset=config.dataset,
+            input_dim=config.input_dim,
+            batch_size=config.eval.batch_size,
+            num_epochs=1,
+            train=False,
+        )
 
+    metrics = {"mse": [], "ll": [], "nc": []}
 
-@jax.jit
-@partial(jax.vmap, in_axes=(None, 0, 0, 0, 0, 0))
-def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
-    samples = sample_n_conditionals(jax.random.split(key, n_samples), x_test, x_context, y_context, mask_context)
-    samples = samples.squeeze(axis=-1)
-    mean = jnp.mean(samples, axis=0)
-    centered_samples = samples - mean
-    covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
-    post = GaussianDistribution(
-        loc=mean.squeeze(),
-        scale=jaxlinop.DenseLinearOperator(covariance),
-    )
-    ll = post.log_prob(y_test.squeeze()) / len(x_test)
-    mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
-    num_context = len(x_context) - jnp.count_nonzero(mask_context)
-    return {"mse": mse, "ll": ll, "nc": num_context}
+    #num_batches = 128 // config.eval.batch_size
+    num_batches = 2500
+    for batch in tqdm.tqdm(ds_test, total=num_batches):
+        m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
+        for k, v in m.items():
+            metrics[k].append(v)
 
-
-if ('mnist' in config.dataset) or ('celeba' in config.dataset):
-    ds_test: Dataset = get_image_data(
-        dataset_name=config.dataset,
-        batch_size=config.batch_size,
-        num_epochs=config.num_epochs,
-        train=False,
-    )
-else:
-    ds_test: Dataset = get_gp_data(
-        config.dataset,
-        input_dim=config.input_dim,
-        batch_size=config.batch_size,
-        num_epochs=config.num_epochs,
-        train=False,
-    )
-
-metrics = {"mse": [], "ll": [], "nc": []}
-
-for batch in tqdm.tqdm(ds_test, total=128 // config.eval.batch_size):
-    m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
-    for k, v in m.items():
-        metrics[k].append(v)
-
-err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
-summary_stats = [
-    ("mean", jnp.mean),
-    ("std", jnp.std),
-    ("err", err)
-]
-metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
-pprint.pprint(metrics)
-if writer is not None:
-    writer.write_scalars(config.num_epochs + 1, metrics)
-
-import time
-time.sleep(60)
+    err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+    summary_stats = [
+        ("mean", jnp.mean),
+        ("std", jnp.std),
+        ("err", err)
+    ]
+    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+    pprint.pprint(metrics)
+    if writer is not None:
+        writer.write_scalars(config.num_epochs + 1, metrics)

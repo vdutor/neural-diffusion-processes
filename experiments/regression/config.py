@@ -31,6 +31,7 @@ class NetworkConfig:
 class EvalConfig:
     batch_size: int = 4
     num_samples: int = 128
+    evaluate: bool = False
 
 
 @dataclass

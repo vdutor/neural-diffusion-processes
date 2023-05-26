@@ -129,12 +129,16 @@ def delete_unused_columns(example):
     return example
 
 
-def add_mask(example):
+def add_mask(example, train=False):
     num_batches = tf.shape(example['x_target'])[0]
     num_target = tf.shape(example['x_target'])[1]
     num_context = tf.shape(example['x_context'])[1]
-    example['mask_target'] = tf.zeros((num_batches, num_target))
-    example['mask_context'] = tf.zeros((num_batches, num_context))
+    if train:
+        example['mask_target'] = tf.zeros((num_batches, num_target))
+        example['mask_context'] = tf.zeros((num_batches, num_context))
+    else:
+        example['mask_target'] = tf.zeros((num_batches, num_target))
+        example['mask_context'] = tf.zeros((num_batches, num_context))
     return example
 
 
@@ -147,11 +151,13 @@ def get_image_data(
 ):
     if train:
         subset = 'train'
-        #split_batch_into_target_and_context = partial(split_into_target_and_context, number_of_context=(0.0,))
-        split_batch_into_target_and_context = partial(split_into_target_and_context, number_of_context=(0.2,))
+        #split_into_target_and_context_map = partial(split_into_target_and_context, number_of_context=(0.0,))
+        split_into_target_and_context_map = partial(split_into_target_and_context, number_of_context=(0.2,))
+        add_mask_map = None
     else:
         subset = 'test'
-        split_batch_into_target_and_context = split_into_target_and_context
+        split_into_target_and_context_map = partial(split_into_target_and_context, number_of_context=(0.2,))
+        add_mask_map = partial(add_mask, train=False)
 
     if 'mnist' in dataset_name:
         # NOTE - this is normalised for the average pixel values for MNIST across the whole dataset
@@ -175,9 +181,11 @@ def get_image_data(
     processed_images_tf_dataset = processed_images_tf_dataset.map(normalise_image_map)
     processed_images_tf_dataset = processed_images_tf_dataset.map(flatten_images)
     processed_images_tf_dataset = processed_images_tf_dataset.map(create_xy_inputs)
-    processed_images_tf_dataset = processed_images_tf_dataset.map(split_batch_into_target_and_context)
+    processed_images_tf_dataset = processed_images_tf_dataset.map(split_into_target_and_context_map)
     processed_images_tf_dataset = processed_images_tf_dataset.map(delete_unused_columns)
-    # processed_images_tf_dataset = processed_images_tf_dataset.map(add_mask)
+    if add_mask_map is not None:
+        processed_images_tf_dataset = processed_images_tf_dataset.map(add_mask)
+    print(len(processed_images_tf_dataset))
     processed_images_tf_dataset = processed_images_tf_dataset.prefetch(AUTOTUNE)
     processed_images_tf_dataset = processed_images_tf_dataset.as_numpy_iterator()
     processed_celeb_batch_dataset = map(lambda d: Batch(**d), processed_images_tf_dataset)
