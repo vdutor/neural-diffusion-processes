@@ -39,8 +39,6 @@ from jax.config import config as jax_config
 jax_config.update("jax_enable_x64", True)
 
 
-DATASET = "se"
-INPUT_DIM = 3
 
 
 def get_data(
@@ -70,41 +68,61 @@ def get_data(
 
 
 from data import _DATASET_FACTORIES
-
-true_gp = _DATASET_FACTORIES[DATASET](list(range(INPUT_DIM)))
-
-
-@jax.jit
-@partial(jax.vmap, in_axes=(0, 0, 0, 0, 0))
-def eval_conditional_gp(x_test, y_test, x_context, y_context, mask_context):
-    x_context = x_context + mask_context[:, None] * 1e3
-    post = predict(true_gp.prior, true_gp.params, (x_context, y_context))(x_test)
-    ll =  post.log_prob(y_test.squeeze()) / len(x_test)
-    mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
-    num_context = len(x_context) - jnp.count_nonzero(mask_context)
-    return {"mse": mse, "ll": ll, "nc": num_context}
+import argparse
 
 
-ds_test = get_data(
-    DATASET,
-    input_dim=INPUT_DIM,
-    train=False,
-    batch_size=32,
-    num_epochs=1,
-)
-metrics = {"mse": [], "ll": [], "nc": []}
-for batch in ds_test:
-    m = eval_conditional_gp(batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
-    for k, v in m.items():
-        metrics[k].append(v)
+if __name__ == "__main__":
+    # Setup arguments.
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default="se")
+    parser.add_argument("--dim-x", type=int, default=1)
+    parser.add_argument('--fullcov', action=argparse.BooleanOptionalAction)
+    args = parser.parse_args()
+    fullcov = args.fullcov
+    dataset = args.dataset
+    dim_x = args.dim_x
+    true_gp = _DATASET_FACTORIES[dataset](list(range(dim_x)))
 
 
-err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
-summary_stats = [
-    ("mean", jnp.mean),
-    ("std", jnp.std),
-    ("err", err)
-]
-metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
-import pprint
-pprint.pprint(metrics)
+    @jax.jit
+    @partial(jax.vmap, in_axes=(0, 0, 0, 0, 0))
+    def eval_conditional_gp(x_test, y_test, x_context, y_context, mask_context):
+        x_context = x_context + mask_context[:, None] * 1e3
+        post = predict(true_gp.prior, true_gp.params, (x_context, y_context), diag=not fullcov)(x_test)
+        ll =  post.log_prob(y_test.squeeze()) / len(x_test)
+        mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
+        num_context = len(x_context) - jnp.count_nonzero(mask_context)
+        return {"mse": mse, "ll": ll, "nc": num_context}
+
+
+    ds_test = get_data(
+        dataset,
+        input_dim=dim_x,
+        train=False,
+        batch_size=32,
+        num_epochs=1,
+    )
+    metrics = {"mse": [], "ll": [], "nc": []}
+    for batch in ds_test:
+        m = eval_conditional_gp(batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
+        for k, v in m.items():
+            metrics[k].append(v)
+
+
+    err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+    summary_stats = [
+        ("mean", jnp.mean),
+        ("std", jnp.std),
+        ("err", err)
+    ]
+    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+
+    print(
+        {
+            "model": "gp" if fullcov else "gp_diag",
+            "data": "eq" if dataset == "se" else dataset,
+            "dim_x": dim_x,
+            "loglik_mean": float(metrics["ll_mean"]),
+            "loglik_error": float(metrics["ll_err"]),
+        }, ","
+    )
