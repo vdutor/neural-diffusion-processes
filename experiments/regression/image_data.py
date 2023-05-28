@@ -1,3 +1,4 @@
+import jax
 import datasets
 import tensorflow as tf
 from neural_diffusion_processes.types import Batch
@@ -143,7 +144,7 @@ def add_mask(example, train=False):
 
 
 def get_image_data(
-    dataset_name: str = "lansinuote/gen.1.celeba",
+    dataset_name: str = "mnist",
     image_col: str = "image",
     batch_size: int = 1024,
     num_epochs: int = 1,
@@ -238,4 +239,4 @@ if __name__ == '__main__':
         ax[0].imshow(y0_reshape[0, ...])
         ax[1].imshow(y0_reshape[1, ...])
         ax[2].imshow(y0_reshape[2, ...])
-        fig.show()
+        fig.savefig(f"y_target_{i}.png")
