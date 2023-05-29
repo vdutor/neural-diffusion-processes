@@ -169,9 +169,9 @@ class GaussianDiffusion:
         yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
         y, _ = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
 
-        ts = jnp.zeros((100,), dtype=jnp.int32)
-        keys = jax.random.split(key, len(ts))
-        y, _ = jax.lax.scan(inner, y, (ts, keys))
+        # ts = jnp.zeros((100,), dtype=jnp.int32)
+        # keys = jax.random.split(key, len(ts))
+        # y, _ = jax.lax.scan(inner, y, (ts, keys))
         return y
 
 
