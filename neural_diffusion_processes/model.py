@@ -8,6 +8,8 @@ import haiku as hk
 import jax
 from einops import rearrange, reduce
 
+from .sparse_attention import efficient_dot_product_attention
+
 
 @check_shapes(
     "t: [batch_size]",
@@ -81,7 +83,7 @@ def scaled_dot_product_attention(
 
 
 class MultiHeadAttention(hk.Module):
-    def __init__(self, d_model: int, num_heads: int, name: str = None):
+    def __init__(self, d_model: int, num_heads: int, name: str = None, sparse: bool = False):
         super().__init__(name=name)
         self.d_model = d_model
         self.num_heads = num_heads
@@ -89,7 +91,12 @@ class MultiHeadAttention(hk.Module):
         assert d_model % self.num_heads == 0
 
         self.depth = d_model // self.num_heads
-        self.attention = scaled_dot_product_attention
+
+        if sparse:
+            print("Using sparse attention")
+            self.attention = efficient_dot_product_attention
+        else:
+            self.attention = scaled_dot_product_attention
 
     @check_shapes(
         "v: [batch..., seq_len_k, dim_v]",
@@ -188,6 +195,7 @@ class BiDimensionalAttentionBlock(hk.Module):
 class AttentionBlock(hk.Module):
     hidden_dim: int
     num_heads: int
+    sparse: bool = False
 
     @check_shapes(
         "s: [batch_size, num_points, hidden_dim]",
@@ -204,7 +212,7 @@ class AttentionBlock(hk.Module):
         )
         y = cs(s + t, "[batch_size, num_points, hidden_dim]")
 
-        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads)(y, y, y)
+        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, sparse=self.sparse)(y, y, y)
         y_att_d = cs(y_att_d, "[batch_size, num_points, hidden_dim_x2]")
         y = y_att_d
 
@@ -300,6 +308,8 @@ class AttentionModel(hk.Module):
     """Number of bi-dimensional attention blocks."""
     hidden_dim: int
     num_heads: int
+    output_dim: int
+    sparse: bool = False
     init_zero: bool = True
 
     @check_shapes(
@@ -307,7 +317,7 @@ class AttentionModel(hk.Module):
         "y: [batch_size, num_points, output_dim]",
         "t: [batch_size]",
         "mask: [batch_size, num_points] if mask is not None",
-        "return: [batch_size, num_points, 1]",
+        "return: [batch_size, num_points, output_dim]",
     )
     def __call__(self, x: jnp.ndarray, y: jnp.ndarray, t: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
         """
@@ -331,7 +341,7 @@ class AttentionModel(hk.Module):
 
         skip = None
         for _ in range(self.n_layers):
-            layer = AttentionBlock(self.hidden_dim, self.num_heads)
+            layer = AttentionBlock(self.hidden_dim, self.num_heads, sparse=self.sparse)
             x, skip_connection = layer(x, t_embedding)
             skip = skip_connection if skip is None else skip_connection + skip
 
@@ -341,7 +351,7 @@ class AttentionModel(hk.Module):
         eps = skip / math.sqrt(self.n_layers * 1.0)
         eps = jax.nn.gelu(hk.Linear(self.hidden_dim)(eps))
         if self.init_zero:
-            eps = hk.Linear(1, w_init=jnp.zeros)(eps)
+            eps = hk.Linear(self.output_dim, w_init=jnp.zeros)(eps)
         else:
-            eps = hk.Linear(1)(eps)
+            eps = hk.Linear(self.output_dim)(eps)
         return eps
