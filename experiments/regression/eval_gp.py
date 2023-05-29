@@ -99,23 +99,25 @@ if __name__ == "__main__":
         dataset,
         input_dim=dim_x,
         train=False,
-        batch_size=32,
+        batch_size=4,
         num_epochs=1,
     )
     metrics = {"mse": [], "ll": [], "nc": []}
-    for batch in ds_test:
+    for i, batch in enumerate(ds_test):
         m = eval_conditional_gp(batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
         for k, v in m.items():
             metrics[k].append(v)
 
 
-    err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+    def err(v):
+        return 1.96 * jnp.std(v) / jnp.sqrt(len(v))
+
     summary_stats = [
         ("mean", jnp.mean),
         ("std", jnp.std),
         ("err", err)
     ]
-    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+    metrics = {f"{k}_{n}": s(jnp.stack(v).ravel()) for k, v in metrics.items() for n, s in summary_stats}
 
     print(
         {
@@ -124,5 +126,5 @@ if __name__ == "__main__":
             "dim_x": dim_x,
             "loglik_mean": float(metrics["ll_mean"]),
             "loglik_error": float(metrics["ll_err"]),
-        }, ","
+        }, end=",\n"
     )

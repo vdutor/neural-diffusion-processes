@@ -1,5 +1,6 @@
 from typing import Mapping, Tuple
 import os
+import pprint
 import string
 import random
 import datetime
@@ -15,6 +16,9 @@ import matplotlib.pyplot as plt
 import optax
 from functools import partial
 from dataclasses import asdict
+
+import jaxlinop
+from gpjax.gaussian_distribution import GaussianDistribution
 
 # Disable all GPUs for TensorFlow. Load data using CPU.
 tf.config.set_visible_devices([], 'GPU')
@@ -294,14 +298,6 @@ else:
 print("EVALUATION")
 
 
-import pprint
-import jaxlinop
-from functools import partial
-from gpjax.gaussian_distribution import GaussianDistribution
-
-from jax.config import config as jax_config
-jax_config.update("jax_enable_x64", True)
-
 net_with_params = partial(net, state.params_ema)
 n_samples = config.eval.num_samples
 
@@ -311,6 +307,43 @@ n_samples = config.eval.num_samples
 def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
     return process.conditional_sample(
         key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
+
+ds_test = get_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=False,
+    batch_size=config.eval.batch_size,
+    num_epochs=1,
+)
+
+x_test = jnp.linspace(-2, 2, 57)[:, None]
+batch0 = next(ds_test)
+samples = sample_n_conditionals(
+    jax.random.split(jax.random.PRNGKey(42), 8),
+    x_test,
+    batch0.x_context[0],
+    batch0.y_context[0],
+    batch0.mask_context[0],
+)
+fig, ax = plt.subplots()
+print(samples.shape)
+mean, var = jnp.mean(samples, axis=0).squeeze(axis=1), jnp.var(samples, axis=0).squeeze(axis=1)
+print(mean.shape)
+print(var.shape)
+ax.plot(x_test, samples[..., 0].T, "C0", lw=1)
+ax.plot(x_test, mean, "k")
+ax.fill_between(
+    x_test.squeeze(axis=1),
+    mean - 1.96 * jnp.sqrt(var),
+    mean + 1.96 * jnp.sqrt(var),
+    color="k",
+    alpha=0.1,
+)
+xc = batch0.x_context[0] + 1e3 * batch0.mask_context[0][:, None]
+ax.plot(xc, batch0.y_context[0], "C3o")
+ax.set_xlim(-2.05, 2.05)
+plt.savefig("conditional_samples.png")
+exit(0)
 
 
 @jax.jit
@@ -335,17 +368,8 @@ def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
 def summary_stats(metrics):
     err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
     summary_stats = [ ("mean", jnp.mean), ("std", jnp.std), ("err", err) ]
-    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+    metrics = {f"{k}_{n}": s(jnp.stack(v).ravel()) for k, v in metrics.items() for n, s in summary_stats}
     return metrics
-
-
-ds_test = get_data(
-    config.dataset,
-    input_dim=config.input_dim,
-    train=False,
-    batch_size=config.eval.batch_size,
-    num_epochs=1,
-)
 
 
 
