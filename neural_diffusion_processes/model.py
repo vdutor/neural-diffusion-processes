@@ -93,7 +93,6 @@ class MultiHeadAttention(hk.Module):
         self.depth = d_model // self.num_heads
 
         if sparse:
-            print("Using sparse attention")
             self.attention = efficient_dot_product_attention
         else:
             self.attention = scaled_dot_product_attention
