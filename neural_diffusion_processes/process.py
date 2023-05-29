@@ -1,7 +1,6 @@
 from typing import Tuple, Protocol
 import jax.numpy as jnp
 import jax
-from einops import repeat
 from check_shapes import check_shapes
 
 from .types import Rng, ndarray, Batch
@@ -119,8 +118,8 @@ class GaussianDiffusion:
             mask_context,
             model_fn: EpsModel,
             num_inner_steps: int = 5,
+            method: str = "repaint"
         ):
-
         if mask is None:
             mask = jnp.zeros_like(x[:, 0])
 
@@ -146,6 +145,41 @@ class GaussianDiffusion:
             y = y_augmented + 0.5 * g * s + g **.5 * jax.random.normal(zkey, shape=s.shape)
             return y[num_context:], None
 
+        @jax.jit
+        def repaint_inner(yt_target, inputs):
+            t, key = inputs
+            key, fkey, mkey, bkey = jax.random.split(key, 4)
+            # one step backward: t -> t-1
+            yt_context = self.forward(fkey, y_context, t)[0]
+            y_augmented = jnp.concatenate([yt_context, yt_target], axis=0)
+            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
+            y = self.ddpm_backward_step(key=bkey, noise=noise_hat, yt=y_augmented, t=t)
+            y = y[num_context:]
+            # one step forward: t-1 -> t
+            z = jax.random.normal(key, shape=y.shape)
+            beta__t_minus_1 = expand_to(self.betas[t - 1], y)
+            y = jnp.sqrt(1. - beta__t_minus_1) * y + jnp.sqrt(beta__t_minus_1) * z
+            return y, None
+
+
+        @jax.jit
+        def repaint_outer(y, inputs):
+            t, key = inputs
+            # loop
+            key, ikey = jax.random.split(key)
+            ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * t
+            keys = jax.random.split(ikey, num_inner_steps)
+            y, _ = jax.lax.scan(repaint_inner, y, (ts, keys))
+
+            # step backward: t -> t-1
+            key, fkey, mkey, bkey = jax.random.split(key, 4)
+            yt_context = self.forward(fkey, y_context, t)[0]
+            y_augmented = jnp.concatenate([yt_context, y], axis=0)
+            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
+            y = self.ddpm_backward_step(key=bkey, noise=noise_hat, yt=y_augmented, t=t)
+            y = y[num_context:]
+            return y, None
+            
 
         @jax.jit
         def outer(yt_target, inputs):
@@ -157,7 +191,6 @@ class GaussianDiffusion:
             y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y_augmented, t=t)
 
             y = y[num_context:]
-            # num_inner_steps = jax.lax.cond(t < 10, lambda _: 50, lambda _: 5, None)
             ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * (t - 1)
             keys = jax.random.split(lkey, num_inner_steps)
             y, _ = jax.lax.scan(inner, y, (ts, keys))
@@ -167,11 +200,14 @@ class GaussianDiffusion:
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))
         yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
-        y, _ = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
 
-        # ts = jnp.zeros((100,), dtype=jnp.int32)
-        # keys = jax.random.split(key, len(ts))
-        # y, _ = jax.lax.scan(inner, y, (ts, keys))
+        if method == "repaint":
+            y, _ = jax.lax.scan(repaint_outer, yT_target, (ts[:-1], keys[:-1]))
+        elif method == "langevin":
+            y, _ = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
+            ts = jnp.zeros((100,), dtype=jnp.int32)
+            keys = jax.random.split(key, len(ts))
+            y, _ = jax.lax.scan(inner, y, (ts, keys))
         return y
 
 

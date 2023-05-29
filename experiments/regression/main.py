@@ -39,7 +39,7 @@ from neural_diffusion_processes.gp import predict
 from config import Config
 
 
-EXPERIMENT = "regression-May25-2"
+EXPERIMENT = "regression-May29-eval"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -246,61 +246,63 @@ if (experiment_dir_if_exists / "checkpoints").exists():
     if index is not None:
         state = state_utils.load_checkpoint(state, str(experiment_dir_if_exists), step_index=index)
         print("Restored checkpoint at step {}".format(state.step))
-    writer = None
-else:
-    exp_root_dir = get_experiment_dir(config)
-    local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
-    tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
-    aim_writer = writers.AimWriter(EXPERIMENT)
-    writer = writers.MultiWriter([aim_writer, tb_writer, local_writer])
-    writer.log_hparams(asdict(config))
 
 
-    actions = [
-        actions.PeriodicCallback(
-            every_steps=10,
-            callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
-        ),
-        actions.PeriodicCallback(
-            every_steps=config.total_steps // 8,
-            callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
-        ),
-        actions.PeriodicCallback(
-            every_steps=config.total_steps // 2,
-            callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
-        ),
-    ]
+exp_root_dir = get_experiment_dir(config)
+local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
+tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
+aim_writer = writers.AimWriter(EXPERIMENT)
+writer = writers.MultiWriter([aim_writer, tb_writer, local_writer])
+writer.log_hparams(asdict(config))
 
-    ds_train: Dataset = get_data(
-        config.dataset,
-        input_dim=config.input_dim,
-        train=True,
-        batch_size=config.batch_size,
-        num_epochs=config.num_epochs,
-    )
 
-    steps = range(state.step + 1, config.total_steps + 1)
-    progress_bar = tqdm.tqdm(steps)
+actions = [
+    actions.PeriodicCallback(
+        every_steps=10,
+        callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
+    ),
+    actions.PeriodicCallback(
+        every_steps=config.total_steps // 8,
+        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
+    ),
+    actions.PeriodicCallback(
+        every_steps=config.total_steps // 2,
+        callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
+    ),
+]
 
-    for step, batch in zip(progress_bar, ds_train):
-        if step < state.step: continue  # wait for the state to catch up in case of restarts
+ds_train: Dataset = get_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=True,
+    batch_size=config.batch_size,
+    num_epochs=config.num_epochs,
+)
 
-        state, metrics = update_step(state, batch)
-        metrics["lr"] = learning_rate_schedule(state.step)
+steps = range(state.step + 1, config.total_steps + 1)
+progress_bar = tqdm.tqdm(steps)
 
-        for action in actions:
-            action(step, t=None, metrics=metrics, state=state, key=key)
+for step, batch in zip(progress_bar, ds_train):
+    if step < state.step: continue  # wait for the state to catch up in case of restarts
 
-        if step % 100 == 0:
-            progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+    state, metrics = update_step(state, batch)
+    metrics["lr"] = learning_rate_schedule(state.step)
+
+    for action in actions:
+        action(step, t=None, metrics=metrics, state=state, key=key)
+
+    if step % 100 == 0:
+        progress_bar.set_description(f"loss {metrics['loss']:.2f}")
         
 
 print("EVALUATION")
+if config.eval.float64:
+    from jax.config import config as jax_config
+    jax_config.update("jax_enable_x64", True)
 
 
 net_with_params = partial(net, state.params_ema)
 n_samples = config.eval.num_samples
-
 
 @jax.jit
 @partial(jax.vmap, in_axes=(0, None, None, None, None))
@@ -308,42 +310,35 @@ def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
     return process.conditional_sample(
         key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
 
-ds_test = get_data(
-    config.dataset,
-    input_dim=config.input_dim,
-    train=False,
-    batch_size=config.eval.batch_size,
-    num_epochs=1,
-)
 
-x_test = jnp.linspace(-2, 2, 57)[:, None]
-batch0 = next(ds_test)
-samples = sample_n_conditionals(
-    jax.random.split(jax.random.PRNGKey(42), 8),
-    x_test,
-    batch0.x_context[0],
-    batch0.y_context[0],
-    batch0.mask_context[0],
-)
-fig, ax = plt.subplots()
-print(samples.shape)
-mean, var = jnp.mean(samples, axis=0).squeeze(axis=1), jnp.var(samples, axis=0).squeeze(axis=1)
-print(mean.shape)
-print(var.shape)
-ax.plot(x_test, samples[..., 0].T, "C0", lw=1)
-ax.plot(x_test, mean, "k")
-ax.fill_between(
-    x_test.squeeze(axis=1),
-    mean - 1.96 * jnp.sqrt(var),
-    mean + 1.96 * jnp.sqrt(var),
-    color="k",
-    alpha=0.1,
-)
-xc = batch0.x_context[0] + 1e3 * batch0.mask_context[0][:, None]
-ax.plot(xc, batch0.y_context[0], "C3o")
-ax.set_xlim(-2.05, 2.05)
-plt.savefig("conditional_samples.png")
-exit(0)
+def plot(batch):
+    batch_size = len(batch.x_context)
+    n = int(batch_size ** 0.5)
+    fig, axes = plt.subplots(n,n,figsize=(5,5), sharex=True, sharey=True)
+    axes = np.array(axes).reshape(-1)
+    x_test = jnp.linspace(-2, 2, 57)[:, None]
+    for i in range(batch_size):
+        samples = sample_n_conditionals(
+            jax.random.split(jax.random.PRNGKey(42), 8),
+            x_test,
+            batch.x_context[i],
+            batch.y_context[i],
+            batch.mask_context[i],
+        )
+        mean, var = jnp.mean(samples, axis=0).squeeze(axis=1), jnp.var(samples, axis=0).squeeze(axis=1)
+        axes[i].plot(x_test, samples[..., 0].T, "C0", lw=1)
+        axes[i].plot(x_test, mean, "k")
+        axes[i].fill_between(
+            x_test.squeeze(axis=1),
+            mean - 1.96 * jnp.sqrt(var),
+            mean + 1.96 * jnp.sqrt(var),
+            color="k",
+            alpha=0.1,
+        )
+        xc = batch.x_context[i] + 1e3 * batch.mask_context[i][:, None]
+        axes[i].plot(xc, batch.y_context[i], "C3o")
+        axes[i].set_xlim(-2.05, 2.05)
+    return fig
 
 
 @jax.jit
@@ -366,23 +361,37 @@ def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
 
 
 def summary_stats(metrics):
-    err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
-    summary_stats = [ ("mean", jnp.mean), ("std", jnp.std), ("err", err) ]
-    metrics = {f"{k}_{n}": s(jnp.stack(v).ravel()) for k, v in metrics.items() for n, s in summary_stats}
+    err = lambda v: 1.96 * jnp.std(v.reshape(-1)) / jnp.sqrt(len(v.reshape(-1)))
+    summary_stats = [("mean", jnp.mean), ("std", jnp.std), ("err", err)]
+    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
     return metrics
 
 
+ds_test = get_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=False,
+    batch_size=config.eval.batch_size,
+    num_epochs=1,
+)
 
 metrics = {"mse": [], "ll": [], "nc": []}
 
-for batch in tqdm.tqdm(ds_test, total=128 // config.eval.batch_size):
-    m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
+from tqdm.contrib import tenumerate
+
+for i, batch in tenumerate(ds_test, total=128 // config.eval.batch_size):
+    key, ekey = jax.random.split(key)
+    m = eval_conditional(ekey, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
     for k, v in m.items():
         metrics[k].append(v)
+
     summary = summary_stats(metrics)
-    pprint.pprint(summary)
+    summary = {"eval_" + k: v for k, v in summary.items()}
+    writer.write_scalars(i, summary)
+    if config.input_dim == 1:
+        fig = plot(batch)
+        writer.write_figures(i, {"eval_conditional_sample": fig})
+
 
 metrics = summary_stats(metrics)
 pprint.pprint(metrics)
-if writer is not None:
-    writer.write_scalars(config.num_epochs + 1, metrics)
