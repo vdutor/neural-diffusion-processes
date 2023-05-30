@@ -1,8 +1,4 @@
-#%%
 import sys; sys.path.append('.')
-import os; os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
-#%%
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -11,7 +7,7 @@ jax.config.update("jax_enable_x64", True)
 from itertools import product
 from tqdm import tqdm
 from data import get_batch, DATASETS, TASKS, _DATASET_CONFIGS
-# %%
+
 PLOT = False
 BATCH_SIZE = 4
 DATASET_SIZE = {"training": int(2**14), "interpolation": 128}
@@ -70,6 +66,3 @@ for dataset, task in product(DATASETS, TASKS):
 
 if PLOT:
     plt.savefig("num_data.png")
-#%%
-
-# %%
