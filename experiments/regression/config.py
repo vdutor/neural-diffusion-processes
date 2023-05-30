@@ -22,7 +22,7 @@ class OptimizerConfig:
 
 @dataclass
 class NetworkConfig:
-    n_layers: int = 2
+    n_layers: int = 4
     hidden_dim: int = 64
     num_heads: int = 8
 
@@ -31,8 +31,8 @@ class NetworkConfig:
 class EvalConfig:
     batch_size: int = 4
     num_samples: int = 128
-    evaluate: bool = False
-
+    float64: bool = False
+ 
 
 @dataclass
 class Config:

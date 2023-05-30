@@ -1,6 +1,6 @@
 from typing import Mapping, Tuple
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "2"
+import pprint
 import string
 import random
 import datetime
@@ -16,9 +16,8 @@ import matplotlib.pyplot as plt
 import optax
 from functools import partial
 from dataclasses import asdict
-
-from experiments.regression.image_data import get_image_data, \
-    create_xy_grid_features_from_single_image, unflatten_image
+import jaxlinop
+from gpjax.gaussian_distribution import GaussianDistribution
 
 # Disable all GPUs for TensorFlow. Load data using CPU.
 tf.config.set_visible_devices([], 'GPU')
@@ -38,7 +37,7 @@ from neural_diffusion_processes.utils import actions
 from config import Config
 
 
-EXPERIMENT = "regression-May25-2"
+EXPERIMENT = "regression-May29-eval"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -280,155 +279,148 @@ if (experiment_dir_if_exists / "checkpoints").exists():
     if index is not None:
         state = state_utils.load_checkpoint(state, str(experiment_dir_if_exists), step_index=index)
         print("Restored checkpoint at step {}".format(state.step))
-    writer = None
-else:
-    exp_root_dir = get_experiment_dir(config)
-    local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
-    tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
-    aim_writer = writers.AimWriter(EXPERIMENT)
-    writer = writers.MultiWriter([aim_writer, tb_writer, local_writer])
-    writer.log_hparams(asdict(config))
 
-    if ('mnist' in config.dataset) or ('celeba' in config.dataset):
-        ds_train: Dataset = get_image_data(
-            dataset_name=config.dataset,
-            batch_size=config.batch_size,
-            num_epochs=config.num_epochs,
-            train=True,
-        )
-        plot_func = plot_prior_image
-    else:
-        ds_train: Dataset = get_gp_data(
-            config.dataset,
-            input_dim=config.input_dim,
-            batch_size=config.batch_size,
-            num_epochs=config.num_epochs,
-            train=True,
-        )
-        plot_func = plots
-
-    actions = [
-        actions.PeriodicCallback(
-            every_steps=10,
-            callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
-        ),
-        actions.PeriodicCallback(
-            every_steps=2000, #config.total_steps // 8,
-            callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plot_func(kwargs["state"], kwargs["key"]))
-        ),
-        actions.PeriodicCallback(
-            every_steps=config.total_steps // 2,
-            callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
-        ),
-    ]
+exp_root_dir = get_experiment_dir(config)
+local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
+tb_writer = writers.TensorBoardWriter(get_experiment_dir(config, "tensorboard"))
+aim_writer = writers.AimWriter(EXPERIMENT)
+writer = writers.MultiWriter([aim_writer, tb_writer, local_writer])
+writer.log_hparams(asdict(config))
 
 
-    batch0 = next(ds_train)
-    state = init(batch0, jax.random.PRNGKey(config.seed))
+actions = [
+    actions.PeriodicCallback(
+        every_steps=10,
+        callback_fn=lambda step, t, **kwargs: writer.write_scalars(step, kwargs["metrics"])
+    ),
+    actions.PeriodicCallback(
+        every_steps=config.total_steps // 8,
+        callback_fn=lambda step, t, **kwargs: writer.write_figures(step, plots(kwargs["state"], kwargs["key"]))
+    ),
+    actions.PeriodicCallback(
+        every_steps=config.total_steps // 2,
+        callback_fn=lambda step, t, **kwargs: state_utils.save_checkpoint(kwargs["state"], exp_root_dir, step)
+    ),
+]
 
-    steps = range(state.step + 1, config.total_steps + 1)
-    progress_bar = tqdm.tqdm(steps)
+ds_train: Dataset = get_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=True,
+    batch_size=config.batch_size,
+    num_epochs=config.num_epochs,
+)
 
-    for step, batch in zip(progress_bar, ds_train):
-        if step < state.step: continue  # wait for the state to catch up in case of restarts
+steps = range(state.step + 1, config.total_steps + 1)
+progress_bar = tqdm.tqdm(steps)
 
-        state, metrics = update_step(state, batch)
-        metrics["lr"] = learning_rate_schedule(state.step)
+for step, batch in zip(progress_bar, ds_train):
+    if step < state.step: continue  # wait for the state to catch up in case of restarts
 
-        for action in actions:
-            action(step, t=None, metrics=metrics, state=state, key=key)
+    state, metrics = update_step(state, batch)
+    metrics["lr"] = learning_rate_schedule(state.step)
 
-        if step % 100 == 0:
-            progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+    for action in actions:
+        action(step, t=None, metrics=metrics, state=state, key=key)
+
+    if step % 100 == 0:
+        progress_bar.set_description(f"loss {metrics['loss']:.2f}")
+        
 
 
-if config.eval.evaluate:
-    print("EVALUATION")
-
-    import pprint
-    import jaxlinop
-    from functools import partial
-    from gpjax.gaussian_distribution import GaussianDistribution
-
+print("EVALUATION")
+if config.eval.float64:
     from jax.config import config as jax_config
     jax_config.update("jax_enable_x64", True)
 
-    net_with_params = partial(net, state.params_ema)
-    n_samples = config.eval.num_samples
-
-    # @jax.jit
-    # def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
-    #     cond_sample_func = partial(
-    #         process.conditional_sample,
-    #         # note, no key argument
-    #         x=x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params
-    #     )
-    #     return jax.lax.map(cond_sample_func, key)
-
-    @jax.jit
-    @partial(jax.vmap, in_axes=(0, None, None, None, None))
-    def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
-        return process.conditional_sample(
-            key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context,
-            model_fn=net_with_params)
+    
+@jax.jit
+@partial(jax.vmap, in_axes=(0, None, None, None, None))
+def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
+    return process.conditional_sample(
+        key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
 
 
-    @jax.jit
-    @partial(jax.vmap, in_axes=(None, 0, 0, 0, 0, 0))
-    def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
-        samples = sample_n_conditionals(jax.random.split(key, n_samples), x_test, x_context, y_context, mask_context)
-        samples = samples.squeeze(axis=-1)
-        mean = jnp.mean(samples, axis=0)
-        centered_samples = samples - mean
-        covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
-        covariance = covariance + jnp.eye(covariance.shape[0]) * 1e-6
-        post = GaussianDistribution(
-            loc=mean.squeeze(),
-            scale=jaxlinop.DenseLinearOperator(covariance),
+def plot(batch):
+    batch_size = len(batch.x_context)
+    n = int(batch_size ** 0.5)
+    fig, axes = plt.subplots(n,n,figsize=(5,5), sharex=True, sharey=True)
+    axes = np.array(axes).reshape(-1)
+    x_test = jnp.linspace(-2, 2, 57)[:, None]
+    for i in range(batch_size):
+        samples = sample_n_conditionals(
+            jax.random.split(jax.random.PRNGKey(42), 8),
+            x_test,
+            batch.x_context[i],
+            batch.y_context[i],
+            batch.mask_context[i],
         )
-        ll = post.log_prob(y_test.squeeze()) / len(x_test)
-        mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
-        num_context = len(x_context) - jnp.count_nonzero(mask_context)
-        return {"mse": mse, "ll": ll, "nc": num_context}
-
-
-    def summary_stats(metrics):
-        err = lambda v: 1.96 * jnp.std(v) / jnp.sqrt(len(v))
-        summary_stats = [ ("mean", jnp.mean), ("std", jnp.std), ("err", err) ]
-        metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
-        return metrics
-
-
-
-    if ('mnist' in config.dataset) or ('celeba' in config.dataset):
-        ds_test: Dataset = get_image_data(
-            dataset_name=config.dataset,
-            batch_size=config.eval.batch_size,
-            num_epochs=1,
-            train=False,
+        mean, var = jnp.mean(samples, axis=0).squeeze(axis=1), jnp.var(samples, axis=0).squeeze(axis=1)
+        axes[i].plot(x_test, samples[..., 0].T, "C0", lw=1)
+        axes[i].plot(x_test, mean, "k")
+        axes[i].fill_between(
+            x_test.squeeze(axis=1),
+            mean - 1.96 * jnp.sqrt(var),
+            mean + 1.96 * jnp.sqrt(var),
+            color="k",
+            alpha=0.1,
         )
-    else:
-        ds_test: Dataset = get_gp_data(
-            dataset=config.dataset,
-            input_dim=config.input_dim,
-            batch_size=config.eval.batch_size,
-            num_epochs=1,
-            train=False,
-        )
+        xc = batch.x_context[i] + 1e3 * batch.mask_context[i][:, None]
+        axes[i].plot(xc, batch.y_context[i], "C3o")
+        axes[i].set_xlim(-2.05, 2.05)
+    return fig
 
-    metrics = {"mse": [], "ll": [], "nc": []}
 
-    #num_batches = 128 // config.eval.batch_size
-    num_batches = 2500
-    for batch in tqdm.tqdm(ds_test, total=num_batches):
-        m = eval_conditional(key, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
-        for k, v in m.items():
-            metrics[k].append(v)
+@jax.jit
+@partial(jax.vmap, in_axes=(None, 0, 0, 0, 0, 0))
+def eval_conditional(key, x_test, y_test, x_context, y_context, mask_context):
+    samples = sample_n_conditionals(jax.random.split(key, n_samples), x_test, x_context, y_context, mask_context)
+    samples = samples.squeeze(axis=-1)
+    mean = jnp.mean(samples, axis=0)
+    centered_samples = samples - mean
+    covariance = jnp.dot(centered_samples.T, centered_samples) / (samples.shape[0] - 1)
+    covariance = covariance + jnp.eye(covariance.shape[0]) * 1e-6
+    post = GaussianDistribution(
+        loc=mean.squeeze(),
+        scale=jaxlinop.DenseLinearOperator(covariance),
+    )
+    ll = post.log_prob(y_test.squeeze()) / len(x_test)
+    mse = jnp.mean((post.mean() - y_test.squeeze()) ** 2)
+    num_context = len(x_context) - jnp.count_nonzero(mask_context)
+    return {"mse": mse, "ll": ll, "nc": num_context}
+
+
+def summary_stats(metrics):
+    err = lambda v: 1.96 * jnp.std(v.reshape(-1)) / jnp.sqrt(len(v.reshape(-1)))
+    summary_stats = [("mean", jnp.mean), ("std", jnp.std), ("err", err)]
+    metrics = {f"{k}_{n}": s(jnp.stack(v)) for k, v in metrics.items() for n, s in summary_stats}
+    return metrics
+
+
+ds_test = get_data(
+    config.dataset,
+    input_dim=config.input_dim,
+    train=False,
+    batch_size=config.eval.batch_size,
+    num_epochs=1,
+)
+
+metrics = {"mse": [], "ll": [], "nc": []}
+
+from tqdm.contrib import tenumerate
+
+for i, batch in tenumerate(ds_test, total=128 // config.eval.batch_size):
+    key, ekey = jax.random.split(key)
+    m = eval_conditional(ekey, batch.x_target, batch.y_target, batch.x_context, batch.y_context, batch.mask_context)
+    for k, v in m.items():
+        metrics[k].append(v)
+
     summary = summary_stats(metrics)
-    pprint.pprint(summary)
+    summary = {"eval_" + k: v for k, v in summary.items()}
+    writer.write_scalars(i, summary)
+    if config.input_dim == 1:
+        fig = plot(batch)
+        writer.write_figures(i, {"eval_conditional_sample": fig})
 
-
-    metrics = summary_stats(metrics)
-    pprint.pprint(metrics)
-    if writer is not None:
-        writer.write_scalars(config.num_epochs + 1, metrics)
+metrics = summary_stats(metrics)
+pprint.pprint(metrics)
