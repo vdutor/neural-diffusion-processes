@@ -32,7 +32,7 @@ class EvalConfig:
     batch_size: int = 4
     num_samples: int = 128
     float64: bool = False
-
+ 
 
 @dataclass
 class Config:

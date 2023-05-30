@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 import optax
 from functools import partial
 from dataclasses import asdict
-
 import jaxlinop
 from gpjax.gaussian_distribution import GaussianDistribution
 
@@ -33,7 +32,6 @@ from neural_diffusion_processes.utils.state import TrainingState
 from neural_diffusion_processes.utils import state as state_utils
 from neural_diffusion_processes.utils import writers
 from neural_diffusion_processes.utils import actions
-from neural_diffusion_processes.gp import predict
 
 
 from config import Config
@@ -54,9 +52,9 @@ def get_experiment_name(config: Config):
         letters = string.ascii_lowercase
         id = ''.join(random.choice(letters) for i in range(4))
         EXPERIMENT_NAME = f"{DATETIME}_{id}"
-    
+
     return EXPERIMENT_NAME
-    
+
 
 
 def get_experiment_dir(config: Config, output: str = "root", exist_ok: bool = True) -> pathlib.Path:
@@ -79,7 +77,7 @@ def get_experiment_dir(config: Config, output: str = "root", exist_ok: bool = Tr
     return dir_
 
 
-def get_data(
+def get_gp_data(
     dataset: str,
     input_dim: int = 1,
     train: bool = True,
@@ -192,14 +190,14 @@ def update_step(state: TrainingState, batch: Batch) -> Tuple[TrainingState, Mapp
     )
     metrics = {
         'loss': loss_value,
-        'step': state.step
+        'step': state.step,
+        'data_seen': (state.step + 1) * batch.x_target.shape[0],
     }
     return new_state, metrics
 
 
 @jax.jit
-def sample_prior(state: TrainingState, key: Rng):
-    x = jnp.linspace(-2, 2, 60)[:, None]
+def sample_prior(state: TrainingState, key: Rng, x: jnp.array):
     net_with_params = partial(net, state.params_ema)
     y0 = process.sample(key, x, mask=None, model_fn=net_with_params)
     return x, y0
@@ -219,7 +217,8 @@ def plots(state: TrainingState, key: Rng):
     if config.input_dim != 1: return {}  # only plot for 1D inputs
     # prior
     fig_prior, ax = plt.subplots()
-    x, y0 = jax.vmap(lambda k: sample_prior(state, k))(jax.random.split(key, 10))
+    x = jnp.linspace(-2, 2, 60)[:, None]
+    x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 10))
     ax.plot(x[...,0].T, y0[...,0].T, color="C0", alpha=0.5)
 
     # conditional
@@ -228,6 +227,40 @@ def plots(state: TrainingState, key: Rng):
     ax.plot(x[...,0].T, y0[...,0].T, "C0", alpha=0.5)
     ax.plot(xc[...,0].T, yc[...,0].T, "C3o")
     return {"prior": fig_prior, "conditional": fig_cond}
+
+
+def plot_prior_image(state: TrainingState, key: Rng):
+    fig, ax = plt.subplots(1, 3, figsize=(10, 4))
+
+    # mnist
+    num_pixels_x = 28
+    num_pixels_y = 28
+    num_channels = 1
+
+    # celeba (FIXME: could be reversed)
+    # num_pixels_y = 218
+    # num_pixels_x = 178
+    # num_channels = 3
+    x_tf = create_xy_grid_features_from_single_image(
+        num_pixels_x=num_pixels_x, num_pixels_y=num_pixels_y
+    )
+    x = jnp.array(x_tf.numpy())
+    x, y0 = jax.vmap(lambda k: sample_prior(state, k, x))(jax.random.split(key, 3))
+
+    y0_reshape = unflatten_image(y0, orig_image_shape=(num_pixels_x, num_pixels_y, num_channels))
+    ax[0].imshow(y0_reshape[0, ...])
+    ax[1].imshow(y0_reshape[1, ...])
+    ax[2].imshow(y0_reshape[2, ...])
+
+    fig_scatter, ax_scatter = plt.subplots(1, 3, figsize=(10, 4))
+    for i in range(3):
+        assert num_channels == 1
+        ax_scatter[i].scatter(
+            x[i, :, 0],
+            x[i, :, 1],
+            c=y0[i, :, 0],
+        )
+    return {"prior": fig, "prior_scatter": fig_scatter}
 
 
 batch_init = Batch(
@@ -246,7 +279,6 @@ if (experiment_dir_if_exists / "checkpoints").exists():
     if index is not None:
         state = state_utils.load_checkpoint(state, str(experiment_dir_if_exists), step_index=index)
         print("Restored checkpoint at step {}".format(state.step))
-
 
 exp_root_dir = get_experiment_dir(config)
 local_writer = writers.LocalWriter(str(exp_root_dir), flush_every_n=100)
@@ -295,15 +327,13 @@ for step, batch in zip(progress_bar, ds_train):
         progress_bar.set_description(f"loss {metrics['loss']:.2f}")
         
 
+
 print("EVALUATION")
 if config.eval.float64:
     from jax.config import config as jax_config
     jax_config.update("jax_enable_x64", True)
 
-
-net_with_params = partial(net, state.params_ema)
-n_samples = config.eval.num_samples
-
+    
 @jax.jit
 @partial(jax.vmap, in_axes=(0, None, None, None, None))
 def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
@@ -391,7 +421,6 @@ for i, batch in tenumerate(ds_test, total=128 // config.eval.batch_size):
     if config.input_dim == 1:
         fig = plot(batch)
         writer.write_figures(i, {"eval_conditional_sample": fig})
-
 
 metrics = summary_stats(metrics)
 pprint.pprint(metrics)

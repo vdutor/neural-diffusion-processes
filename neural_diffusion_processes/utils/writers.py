@@ -225,7 +225,7 @@ class AimWriter(_MetricWriter):
         """
         """
         super().__init__()
-        self._run = aim.Run(experiment=experiment)
+        self._run = aim.Run(experiment=experiment, log_system_params=True, )
     
 
     def log_hparams(self, hparams: Mapping[str, Any]):

@@ -8,6 +8,8 @@ import haiku as hk
 import jax
 from einops import rearrange, reduce
 
+from .sparse_attention import efficient_dot_product_attention
+
 
 @check_shapes(
     "t: [batch_size]",
@@ -81,7 +83,7 @@ def scaled_dot_product_attention(
 
 
 class MultiHeadAttention(hk.Module):
-    def __init__(self, d_model: int, num_heads: int, sparse: bool = False, name: str = None):
+    def __init__(self, d_model: int, num_heads: int, name: str = None, sparse: bool = False):
         super().__init__(name=name)
         self.d_model = d_model
         self.num_heads = num_heads
@@ -89,7 +91,11 @@ class MultiHeadAttention(hk.Module):
         assert d_model % self.num_heads == 0
 
         self.depth = d_model // self.num_heads
-        self.attention = scaled_dot_product_attention
+
+        if sparse:
+            self.attention = efficient_dot_product_attention
+        else:
+            self.attention = scaled_dot_product_attention
 
     @check_shapes(
         "v: [batch..., seq_len_k, dim_v]",
@@ -138,7 +144,6 @@ class MultiHeadAttention(hk.Module):
 class BiDimensionalAttentionBlock(hk.Module):
     hidden_dim: int
     num_heads: int
-    sparse: bool = False
 
     @check_shapes(
         "s: [batch_size, num_points, input_dim, hidden_dim]",
@@ -160,7 +165,7 @@ class BiDimensionalAttentionBlock(hk.Module):
         y = cs(s + t, "[batch_size, num_points, input_dim, hidden_dim]")
 
         # no mask needed as `num_points` is part of the batch dimension
-        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, self.sparse)(y, y, y)
+        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads)(y, y, y)
         y_att_d = cs(y_att_d, "[batch_size, num_points, input_dim, hidden_dim_x2]")
 
         y_r = cs(
@@ -170,7 +175,7 @@ class BiDimensionalAttentionBlock(hk.Module):
         if mask is not None:
             mask = jnp.expand_dims(mask, 1)
         
-        y_att_n = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, self.sparse)(y_r, y_r, y_r, mask)
+        y_att_n = MultiHeadAttention(2 * self.hidden_dim, self.num_heads)(y_r, y_r, y_r, mask)
         y_att_n = cs(y_att_n, "[batch_size, input_dim, num_points, hidden_dim_x2]")
         y_att_n = cs(
             jnp.swapaxes(y_att_n, 1, 2),
@@ -184,11 +189,12 @@ class BiDimensionalAttentionBlock(hk.Module):
         skip = jax.nn.gelu(skip)
         return (s + residual) / math.sqrt(2.0), skip
 
+
 @dataclass
 class AttentionBlock(hk.Module):
     hidden_dim: int
     num_heads: int
-    sparse: bool
+    sparse: bool = False
 
     @check_shapes(
         "s: [batch_size, num_points, hidden_dim]",
@@ -199,20 +205,14 @@ class AttentionBlock(hk.Module):
     def __call__(
         self, s: jnp.ndarray, t: jnp.ndarray
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """
-        Bi-dimensional attention block. Main computation block in the NDP noise model.
-        """
         t = cs(
-            hk.Linear(self.hidden_dim)(t)[:, None, None, :],
-            "[batch_size, 1, 1, hidden_dim]",
+            hk.Linear(self.hidden_dim)(t)[:, None, :],
+            "[batch_size, 1, hidden_dim]",
         )
-        # y = cs(s + t, "[batch_size, num_points, hidden_dim]")
-        y = cs(s + t.squeeze(1), "[batch_size, num_points, hidden_dim]")
+        y = cs(s + t, "[batch_size, num_points, hidden_dim]")
 
-        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, self.sparse)(y, y, y)
+        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, sparse=self.sparse)(y, y, y)
         y_att_d = cs(y_att_d, "[batch_size, num_points, hidden_dim_x2]")
-
-        # y = y_att_n + y_att_d
         y = y_att_d
 
         residual, skip = jnp.split(y, 2, axis=-1)
@@ -231,7 +231,7 @@ class BiDimensionalAttentionModel(hk.Module):
 
     @check_shapes(
         "x: [batch_size, seq_len, input_dim]",
-        "y: [batch_size, seq_len, 1]",
+        "y: [batch_size, seq_len, output_dim]",
         "return: [batch_size, seq_len, input_dim, 2]",
     )
     def process_inputs(self, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
@@ -297,4 +297,60 @@ class BiDimensionalAttentionModel(hk.Module):
             eps = hk.Linear(1, w_init=jnp.zeros)(eps)
         else:
             eps = hk.Linear(1)(eps)
+        return eps
+
+
+
+@dataclass
+class AttentionModel(hk.Module):
+    n_layers: int
+    """Number of bi-dimensional attention blocks."""
+    hidden_dim: int
+    num_heads: int
+    output_dim: int
+    sparse: bool = False
+    init_zero: bool = True
+
+    @check_shapes(
+        "x: [batch_size, num_points, input_dim]",
+        "y: [batch_size, num_points, output_dim]",
+        "t: [batch_size]",
+        "mask: [batch_size, num_points] if mask is not None",
+        "return: [batch_size, num_points, output_dim]",
+    )
+    def __call__(self, x: jnp.ndarray, y: jnp.ndarray, t: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
+        """
+        Computes the additive noise that was added to `y_0` to obtain `y_t`
+        based on `x_t` and `y_t` and `t`
+        """
+        del mask
+
+        x = cs(
+            jnp.concatenate([x, y], axis=-1),
+            "[batch_size, num_points, input_dim__output_dim]",
+        )
+
+        x = cs(
+            hk.Linear(self.hidden_dim)(x),
+            "[batch_size, num_points, hidden_dim]",
+        )
+        x = jax.nn.gelu(x)
+
+        t_embedding = timestep_embedding(t, self.hidden_dim)
+
+        skip = None
+        for _ in range(self.n_layers):
+            layer = AttentionBlock(self.hidden_dim, self.num_heads, sparse=self.sparse)
+            x, skip_connection = layer(x, t_embedding)
+            skip = skip_connection if skip is None else skip_connection + skip
+
+        x = cs(x, "[batch_size, num_points, hidden_dim]")
+        skip = cs(skip, "[batch_size, num_points, hidden_dim]")
+
+        eps = skip / math.sqrt(self.n_layers * 1.0)
+        eps = jax.nn.gelu(hk.Linear(self.hidden_dim)(eps))
+        if self.init_zero:
+            eps = hk.Linear(self.output_dim, w_init=jnp.zeros)(eps)
+        else:
+            eps = hk.Linear(self.output_dim)(eps)
         return eps
