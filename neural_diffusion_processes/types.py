@@ -19,8 +19,8 @@ Config = Any
 class Batch(Pytree):
     x_target: ndarray
     y_target: ndarray
-    x_context: ndarray
-    y_context: ndarray
+    x_context: ndarray | None = None
+    y_context: ndarray | None = None
     mask_target: ndarray | None = None
     mask_context: ndarray | None = None
 

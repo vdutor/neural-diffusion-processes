@@ -36,7 +36,7 @@ from neural_diffusion_processes.utils import actions
 from config import Config
 
 
-EXPERIMENT = "cifar-May29"
+EXPERIMENT = "eval-May29-test"
 EXPERIMENT_NAME = None
 DATETIME = datetime.datetime.now().strftime("%b%d_%H%M%S")
 HERE = pathlib.Path(__file__).parent
@@ -86,8 +86,8 @@ def get_image_grid_inputs(size: int, a=2):
 
 def get_rescale_function_fwd_and_inv(config: Config):
     if config.dataset == "mnist":
-        mean = 0.0
-        std = 1.0
+        mean = jnp.zeros((1,)).reshape(1, 1)
+        std = jnp.ones((1,)).reshape(1, 1)
     elif config.dataset == "celeba32":
         mean = np.array([0.5066832 , 0.4247095 , 0.38070202]).reshape(1, 3)
         std = np.array([0.30913046, 0.28822428, 0.2866247]).reshape(1, 3)
@@ -365,27 +365,83 @@ for step, batch_init in zip(progress_bar, ds_train):
 
 
 print("EVALUATION")
+import numpy as np
+
+net_with_params = partial(net, state.params_ema)
+
+@partial(jax.vmap, in_axes=(0, None, None, None, None))
+@partial(jax.vmap, in_axes=(None, 0, 0, 0, 0))
+@jax.jit
+def sample_n_conditionals(key, x_test, x_context, y_context, mask_context):
+    return process.conditional_sample(
+        key, x_test, mask=None, x_context=x_context, y_context=y_context, mask_context=mask_context, model_fn=net_with_params)
+
+
+KEEP = 33  # random number
+NOT_KEEP = 44  # random number
+
+
+def get_context_mask(key, config: Config, context_type: str | float = "horizontal") -> ndarray:
+    x = get_image_grid_inputs(config.image_size)
+    if context_type == "horizontal":
+        condition = x[..., 1] > 0.0
+    elif context_type == "vertical":
+        condition = x[..., 0] < 0.0
+    elif isinstance(context_type, float):
+        p = context_type
+        condition = jax.random.uniform(key, shape=(len(x),)) <= p
+    else:
+        raise ValueError(f"Unknown context type {context_type}")
+
+    return jnp.where(
+        condition,
+        KEEP * jnp.ones_like(x[..., 0]),
+        NOT_KEEP * jnp.ones_like(x[..., 0]),
+    )
+
+get_idx_keep = lambda x: jnp.where(x == KEEP, jnp.ones(x.shape, dtype=bool), jnp.zeros(x.shape, dtype=bool))
+
+rescale, rev_rescale = get_rescale_function_fwd_and_inv(config)
 ds_test: Dataset = get_image_data(
     config,
     batch_size=config.eval.batch_size,
     num_epochs=1,
     train=False,
 )
+n_samples = 6
+
 batch0 = next(ds_test)
 x_target = get_image_grid_inputs(config.image_size)
-mask_context = jnp.where(
-    batch0.x_target[..., 0] < 0, 1.0, 0.0
-)
-
-plt.imshow(mask_context)
-
-fig, axes = plt.subplots(5, 5, figsize=(n, n), sharex=True, sharey=True)
-axes = np.array(axes).reshape(-1)
 im_shape = (config.image_size, config.image_size, config.output_dim)
-images_batch = rev_rescale(batch_init.y_target)
-for i in range(len(axes)):
-    axes[i].imshow(images_batch[i].reshape(im_shape))
-    axes[i].set_xticks([])
-    axes[i].set_yticks([])
 
-fig.savefig("tmp.png")
+PERCENTAGES = [0.05, 0.1, 0.2, .4, .8, .95]
+data = []
+
+for i, percentage in enumerate(PERCENTAGES):
+
+    key, ckey = jax.random.split(key)
+    context_mask = get_context_mask(ckey, config, percentage)
+    num_context_points = jnp.where(context_mask == KEEP, jnp.ones_like(context_mask), jnp.zeros_like(context_mask)).sum()
+    print(percentage, num_context_points, num_context_points / len(context_mask))
+
+    key, skey = jax.random.split(key)
+    samples = sample_n_conditionals(
+        jax.random.split(skey, n_samples),
+        batch0.x_target,
+        batch0.x_target[:, get_idx_keep(context_mask)],
+        batch0.y_target[:, get_idx_keep(context_mask)],
+        jnp.zeros_like(batch0.x_target[:, get_idx_keep(context_mask)][..., 0]),
+    )  # [num_samples, batch_size, num_points, output_dim]
+    samples = jax.vmap(rev_rescale)(samples)
+    target = rev_rescale(batch0.y_target)
+
+    m = jnp.mean(samples, axis=0)  # [batch_size, num_points, output_dim]
+    mse = jnp.mean((m - target)**2, axis=[1, 2])  # [batch_size]
+    data.append({"per": percentage, "mse_mean": jnp.mean(mse), "mse_std": jnp.std(mse)})
+    print(data[-1])
+
+
+import pandas as pd
+df = pd.DataFrame(data)
+print(df)
+df.to_csv(f"eval_{config.dataset}.csv")
