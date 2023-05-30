@@ -78,7 +78,6 @@ def scaled_dot_product_attention(
         "[batch..., seq_len_q, depth_v]",
     )
 
-    # return output, attention_weights
     return output
 
 
@@ -133,11 +132,6 @@ class MultiHeadAttention(hk.Module):
         )  # (batch_size, seq_len_q, d_model)
         
         return output
-
-        # if return_attention_weights:
-        #     return output, attention_weights
-        # else:
-        #     return output
 
 
 @dataclass

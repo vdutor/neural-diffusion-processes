@@ -131,20 +131,6 @@ class GaussianDiffusion:
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
         num_context = len(x_context)
 
-        g = 1e-4
-
-        @jax.jit
-        def inner(y, inputs):
-            t, key = inputs
-            ykey, mkey, rkey, zkey = jax.random.split(key, 4)
-            yt_context = self.forward(ykey, y_context, t)[0]
-            y_augmented = jnp.concatenate([yt_context, y], axis=0)
-            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
-            m, v = self.ddpm_backward_mean_var(noise=noise_hat, yt=y_augmented, t=t)
-            s = - v ** (-1) * (y_augmented - m)
-            y = y_augmented + 0.5 * g * s + g **.5 * jax.random.normal(zkey, shape=s.shape)
-            return y[num_context:], None
-
         @jax.jit
         def repaint_inner(yt_target, inputs):
             t, key = inputs
@@ -181,33 +167,11 @@ class GaussianDiffusion:
             return y, None
             
 
-        @jax.jit
-        def outer(yt_target, inputs):
-            t, key = inputs
-            ykey, mkey, rkey, lkey = jax.random.split(key, 4)
-            yt_context = self.forward(ykey, y_context, t)[0]
-            y_augmented = jnp.concatenate([yt_context, yt_target], axis=0)
-            noise_hat = model_fn(t, y_augmented, x_augmented, mask_augmented, key=mkey)
-            y = self.ddpm_backward_step(key=rkey, noise=noise_hat, yt=y_augmented, t=t)
-
-            y = y[num_context:]
-            ts = jnp.ones((num_inner_steps,), dtype=jnp.int32) * (t - 1)
-            keys = jax.random.split(lkey, num_inner_steps)
-            y, _ = jax.lax.scan(inner, y, (ts, keys))
-            return y, None
-
-
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))
         yT_target = jax.random.normal(ykey, (len(x), y_context.shape[-1]))
 
-        if method == "repaint":
-            y, _ = jax.lax.scan(repaint_outer, yT_target, (ts[:-1], keys[:-1]))
-        elif method == "langevin":
-            y, _ = jax.lax.scan(outer, yT_target, (ts[:-1], keys[:-1]))
-            ts = jnp.zeros((100,), dtype=jnp.int32)
-            keys = jax.random.split(key, len(ts))
-            y, _ = jax.lax.scan(inner, y, (ts, keys))
+        y, _ = jax.lax.scan(repaint_outer, yT_target, (ts[:-1], keys[:-1]))
         return y
 
 
