@@ -1,0 +1,12 @@
+python main.py --config.dataset=se --config.input_dim=1 --config.restore=logs/regression-May25-2/May26_014440_rcva/;
+python main.py --config.dataset=se --config.input_dim=2 --config.restore=logs/regression-May25-2/May26_023039_zrox/;
+python main.py --config.dataset=se --config.input_dim=3 --config.restore=logs/regression-May25-2/May26_042713_hjds/;
+python main.py --config.dataset=matern --config.input_dim=1 --config.restore=logs/regression-May25-2/May27_145742_pjjl/;
+python main.py --config.dataset=matern --config.input_dim=2 --config.restore=logs/regression-May25-2/May27_145742_zjii/;
+python main.py --config.dataset=matern --config.input_dim=3 --config.restore=logs/regression-May25-2/May27_154336_nter/;
+python main.py --config.eval.float64=True --config.dataset=se --config.input_dim=1 --config.restore=logs/regression-May25-2/May26_014440_rcva/;
+python main.py --config.eval.float64=True --config.dataset=se --config.input_dim=2 --config.restore=logs/regression-May25-2/May26_023039_zrox/;
+python main.py --config.eval.float64=True --config.dataset=se --config.input_dim=3 --config.restore=logs/regression-May25-2/May26_042713_hjds/;
+python main.py --config.eval.float64=True --config.dataset=matern --config.input_dim=1 --config.restore=logs/regression-May25-2/May27_145742_pjjl/;
+python main.py --config.eval.float64=True --config.dataset=matern --config.input_dim=2 --config.restore=logs/regression-May25-2/May27_145742_zjii/;
+python main.py --config.eval.float64=True --config.dataset=matern --config.input_dim=3 --config.restore=logs/regression-May25-2/May27_154336_nter/;

@@ -121,11 +121,10 @@ def register_dataset_factory(name: str):
 def _se_dataset_factory(active_dim: List[int]):
     k = jaxkern.stationary.RBF(active_dims=active_dim)
     input_dim = len(active_dim)
+    factor = jnp.sqrt(input_dim)
     params = {
         "mean_function": {},
-        "kernel": {"lengthscale": _LENGTHSCALE * input_dim, "variance": _KERNEL_VAR,},
-            # {"variance": 0,},
-        # ],
+        "kernel": {"lengthscale": _LENGTHSCALE * factor, "variance": _KERNEL_VAR,},
         "noise_variance": _NOISE_VAR
     }
     return GPFunctionalDistribution(k, params)
@@ -135,10 +134,10 @@ def _se_dataset_factory(active_dim: List[int]):
 def _matern_dataset_factory(active_dim: List[int]):
     k = jaxkern.stationary.Matern52(active_dims=active_dim)
     input_dim = len(active_dim)
+    factor = jnp.sqrt(input_dim)
     params = {
         "mean_function": {},
-        "kernel": {"lengthscale": _LENGTHSCALE * input_dim, "variance": _KERNEL_VAR,},
-            # {"variance": _NOISE_VAR,},
+        "kernel": {"lengthscale": _LENGTHSCALE * factor, "variance": _KERNEL_VAR,},
         "noise_variance": _NOISE_VAR
     }
     return GPFunctionalDistribution(k, params)
