@@ -1,11 +1,12 @@
-from typing import Tuple
-from dataclasses import dataclass
-
 import math
-from check_shapes import check_shapes, check_shape as cs
-import jax.numpy as jnp
+from dataclasses import dataclass
+from typing import Tuple
+
 import haiku as hk
 import jax
+import jax.numpy as jnp
+from check_shapes import check_shape as cs
+from check_shapes import check_shapes
 from einops import rearrange, reduce
 
 from .sparse_attention import efficient_dot_product_attention
@@ -47,7 +48,7 @@ def scaled_dot_product_attention(
     but it must be broadcastable for addition.
 
     Mask values are in {0, 1}, where a 1 indicates which values *not* to use.
-    The mask is multiplied with *-1e9 (close to negative infinity).* 
+    The mask is multiplied with *-1e9 (close to negative infinity).*
     This is done because the mask is summed with the scaled matrix multiplication of Q and K and is applied immediately before a softmax.
     The goal is to zero out these cells, and large negative inputs to softmax are near zero in the output.
 
@@ -55,9 +56,7 @@ def scaled_dot_product_attention(
       output, attention_weights
     """
 
-    matmul_qk = cs(
-        jnp.einsum("...qd,...kd->...qk", q, k), "[batch..., seq_len_q, seq_len_k]"
-    )
+    matmul_qk = cs(jnp.einsum("...qd,...kd->...qk", q, k), "[batch..., seq_len_q, seq_len_k]")
 
     # scale matmul_qk
     depth = jnp.shape(k)[-1] * 1.0
@@ -101,7 +100,7 @@ class MultiHeadAttention(hk.Module):
         "k: [batch..., seq_len_k, dim_k]",
         "q: [batch..., seq_len_q, dim_q]",
         "mask: [broadcast batch..., seq_len_q] if mask is not None",
-        "return: [batch..., seq_len_q, hidden_dim]"
+        "return: [batch..., seq_len_q, hidden_dim]",
     )
     def __call__(self, v, k, q, mask=None):
         q = hk.Linear(output_size=self.d_model)(q)  # (batch_size, seq_len, d_model)
@@ -130,7 +129,7 @@ class MultiHeadAttention(hk.Module):
         output = hk.Linear(output_size=self.d_model)(
             scaled_attention
         )  # (batch_size, seq_len_q, d_model)
-        
+
         return output
 
 
@@ -162,13 +161,11 @@ class BiDimensionalAttentionBlock(hk.Module):
         y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads)(y, y, y)
         y_att_d = cs(y_att_d, "[batch_size, num_points, input_dim, hidden_dim_x2]")
 
-        y_r = cs(
-            jnp.swapaxes(y, 1, 2), "[batch_size, input_dim, num_points, hidden_dim]"
-        )
+        y_r = cs(jnp.swapaxes(y, 1, 2), "[batch_size, input_dim, num_points, hidden_dim]")
 
         if mask is not None:
             mask = jnp.expand_dims(mask, 1)
-        
+
         y_att_n = MultiHeadAttention(2 * self.hidden_dim, self.num_heads)(y_r, y_r, y_r, mask)
         y_att_n = cs(y_att_n, "[batch_size, input_dim, num_points, hidden_dim_x2]")
         y_att_n = cs(
@@ -196,16 +193,16 @@ class AttentionBlock(hk.Module):
         "return[0]: [batch_size, num_points, hidden_dim]",
         "return[1]: [batch_size, num_points, hidden_dim]",
     )
-    def __call__(
-        self, s: jnp.ndarray, t: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(self, s: jnp.ndarray, t: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
         t = cs(
             hk.Linear(self.hidden_dim)(t)[:, None, :],
             "[batch_size, 1, hidden_dim]",
         )
         y = cs(s + t, "[batch_size, num_points, hidden_dim]")
 
-        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, sparse=self.sparse)(y, y, y)
+        y_att_d = MultiHeadAttention(2 * self.hidden_dim, self.num_heads, sparse=self.sparse)(
+            y, y, y
+        )
         y_att_d = cs(y_att_d, "[batch_size, num_points, hidden_dim_x2]")
         y = y_att_d
 
@@ -236,19 +233,6 @@ class BiDimensionalAttentionModel(hk.Module):
         x = jnp.expand_dims(x, axis=-1)
         y = jnp.repeat(jnp.expand_dims(y, axis=-1), num_x_dims, axis=2)
         return jnp.concatenate([x, y], axis=-1)
-    
-    @check_shapes(
-        "x: [seq_len, input_dim]",
-        "mask: [seq_len] if mask is not None",
-        "return: [seq_len, input_dim]",
-    )
-    def center(self, x: jnp.ndarray, mask: jnp.ndarray):
-        if mask is None: 
-            mask = jnp.zeros_like(x[..., 0])
-
-        num_points = len(x) - jnp.count_nonzero(mask)
-        mean = jnp.sum(x * (1. - mask[..., None]), axis=0, keepdims=True)  / num_points # [1, input_dim]
-        return x - mean
 
     @check_shapes(
         "x: [batch_size, num_points, input_dim]",
@@ -257,7 +241,9 @@ class BiDimensionalAttentionModel(hk.Module):
         "mask: [batch_size, num_points] if mask is not None",
         "return: [batch_size, num_points, 1]",
     )
-    def __call__(self, x: jnp.ndarray, y: jnp.ndarray, t: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
+    def __call__(
+        self, x: jnp.ndarray, y: jnp.ndarray, t: jnp.ndarray, mask: jnp.ndarray
+    ) -> jnp.ndarray:
         """
         Computes the additive noise that was added to `y_0` to obtain `y_t`
         based on `x_t` and `y_t` and `t`
@@ -281,9 +267,7 @@ class BiDimensionalAttentionModel(hk.Module):
         x = cs(x, "[batch_size, num_points, input_dim, hidden_dim]")
         skip = cs(skip, "[batch_size, num_points, input_dim, hidden_dim]")
 
-        skip = cs(
-            reduce(skip, "b n d h -> b n h", "mean"), "[batch, num_points, hidden_dim]"
-        )
+        skip = cs(reduce(skip, "b n d h -> b n h", "mean"), "[batch, num_points, hidden_dim]")
 
         eps = skip / math.sqrt(self.n_layers * 1.0)
         eps = jax.nn.gelu(hk.Linear(self.hidden_dim)(eps))
@@ -292,7 +276,6 @@ class BiDimensionalAttentionModel(hk.Module):
         else:
             eps = hk.Linear(1)(eps)
         return eps
-
 
 
 @dataclass
@@ -312,7 +295,9 @@ class AttentionModel(hk.Module):
         "mask: [batch_size, num_points] if mask is not None",
         "return: [batch_size, num_points, output_dim]",
     )
-    def __call__(self, x: jnp.ndarray, y: jnp.ndarray, t: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
+    def __call__(
+        self, x: jnp.ndarray, y: jnp.ndarray, t: jnp.ndarray, mask: jnp.ndarray
+    ) -> jnp.ndarray:
         """
         Computes the additive noise that was added to `y_0` to obtain `y_t`
         based on `x_t` and `y_t` and `t`

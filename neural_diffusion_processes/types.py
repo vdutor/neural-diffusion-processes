@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from simple_pytree import dataclass, Pytree
+from simple_pytree import Pytree, dataclass
 
 ndarray = Union[jnp.ndarray, np.ndarray]
 Dtype = Any

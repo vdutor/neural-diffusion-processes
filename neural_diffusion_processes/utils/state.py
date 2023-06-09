@@ -1,11 +1,10 @@
 """Based on code from Erik Bodin"""
 
-import equinox as eqx
-import optax
 import os
 
+import equinox as eqx
+import optax
 from jaxtyping import Array, PyTree
-
 
 _DIRECTORY_PATH_CHECKPOINTS = "{path}/checkpoints"
 _STEP_FILENAME_PREFIX = "ckpt-{step}"
@@ -53,16 +52,12 @@ def find_latest_checkpoint_step_index(directory_path: str):
 
 def _save_pytree(pytree: PyTree, directory_path: str, step_index: int):
     _cond_mkdir(directory_path)
-    filepath = (
-        directory_path + "/" + _index_to_checkpoint_filename(step_index=step_index)
-    )
+    filepath = directory_path + "/" + _index_to_checkpoint_filename(step_index=step_index)
     eqx.tree_serialise_leaves(filepath, pytree=pytree)
 
 
 def _load_pytree(pytree_like, directory_path: str, step_index: int):
-    filepath = (
-        directory_path + "/" + _index_to_checkpoint_filename(step_index=step_index)
-    )
+    filepath = directory_path + "/" + _index_to_checkpoint_filename(step_index=step_index)
     return eqx.tree_deserialise_leaves(filepath, like=pytree_like)
 
 

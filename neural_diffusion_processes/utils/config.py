@@ -1,6 +1,7 @@
 import sys
-from absl import flags
 from typing import Type, TypeVar
+
+from absl import flags
 from IPython import get_ipython
 from ml_collections import config_flags
 
@@ -14,5 +15,3 @@ def setup_config(config_class: Type[A]) -> A:
         flags.FLAGS(sys.argv)
         config = config_flag.value
     return config
-
-

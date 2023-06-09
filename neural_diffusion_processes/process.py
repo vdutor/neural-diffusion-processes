@@ -1,13 +1,13 @@
-from typing import Tuple, Protocol
-import jax.numpy as jnp
+from typing import Protocol, Tuple
+
 import jax
+import jax.numpy as jnp
 from check_shapes import check_shapes
 
-from .types import Rng, ndarray, Batch
+from .types import Batch, Rng, ndarray
 
 
 class EpsModel(Protocol):
-
     @check_shapes("t: []", "yt: [N, y_dim]", "x: [N, x_dim]", "mask: [N,]", "return: [N, y_dim]")
     def __call__(self, t: ndarray, yt: ndarray, x: ndarray, mask: ndarray, *, key: Rng) -> ndarray:
         ...
@@ -36,8 +36,7 @@ class GaussianDiffusion:
     def __init__(self, betas):
         self.betas = betas
         self.alphas = 1.0 - betas
-        self.alpha_bars=jnp.cumprod(1.0 - betas)
-    
+        self.alpha_bars = jnp.cumprod(1.0 - betas)
 
     @check_shapes("y0: [N, y_dim]", "t: []", "return[0]: [N, y_dim]", "return[1]: [N, y_dim]")
     def pt0(self, y0: ndarray, t: ndarray) -> Tuple[ndarray, ndarray]:
@@ -53,13 +52,7 @@ class GaussianDiffusion:
         yt = m_t0 + jnp.sqrt(v_t0) * noise
         return yt, noise
 
-    def ddpm_backward_step(
-        self,
-        key: Rng,
-        noise: ndarray,
-        yt: ndarray,
-        t: ndarray
-    ) -> ndarray:
+    def ddpm_backward_step(self, key: Rng, noise: ndarray, yt: ndarray, t: ndarray) -> ndarray:
         beta_t = expand_to(self.betas[t], yt)
         alpha_t = expand_to(self.alphas[t], yt)
         alpha_bar_t = expand_to(self.alpha_bars[t], yt)
@@ -70,13 +63,8 @@ class GaussianDiffusion:
         b = beta_t / jnp.sqrt(1.0 - alpha_bar_t)
         yt_minus_one = a * (yt - b * noise) + jnp.sqrt(beta_t) * z
         return yt_minus_one
-    
-    def ddpm_backward_mean_var(
-        self,
-        noise: ndarray,
-        yt: ndarray,
-        t: ndarray
-    ) -> ndarray:
+
+    def ddpm_backward_mean_var(self, noise: ndarray, yt: ndarray, t: ndarray) -> ndarray:
         beta_t = expand_to(self.betas[t], yt)
         alpha_t = expand_to(self.alphas[t], yt)
         alpha_bar_t = expand_to(self.alpha_bars[t], yt)
@@ -107,25 +95,26 @@ class GaussianDiffusion:
         keys = jax.random.split(key, len(ts))
         yf, yt = jax.lax.scan(scan_fn, yT, (ts, keys))
         return yt if yt is not None else yf
-    
+
     def conditional_sample(
-            self,
-            key,
-            x,
-            mask, *,
-            x_context,
-            y_context,
-            mask_context,
-            model_fn: EpsModel,
-            num_inner_steps: int = 5,
-            method: str = "repaint"
-        ):
+        self,
+        key,
+        x,
+        mask,
+        *,
+        x_context,
+        y_context,
+        mask_context,
+        model_fn: EpsModel,
+        num_inner_steps: int = 5,
+        method: str = "repaint",
+    ):
         if mask is None:
             mask = jnp.zeros_like(x[:, 0])
 
         if mask_context is None:
             mask_context = jnp.zeros_like(x_context[:, 0])
-        
+
         key, ykey = jax.random.split(key)
         x_augmented = jnp.concatenate([x_context, x], axis=0)
         mask_augmented = jnp.concatenate([mask_context, mask], axis=0)
@@ -144,9 +133,8 @@ class GaussianDiffusion:
             # one step forward: t-1 -> t
             z = jax.random.normal(key, shape=y.shape)
             beta__t_minus_1 = expand_to(self.betas[t - 1], y)
-            y = jnp.sqrt(1. - beta__t_minus_1) * y + jnp.sqrt(beta__t_minus_1) * z
+            y = jnp.sqrt(1.0 - beta__t_minus_1) * y + jnp.sqrt(beta__t_minus_1) * z
             return y, None
-
 
         @jax.jit
         def repaint_outer(y, inputs):
@@ -165,7 +153,6 @@ class GaussianDiffusion:
             y = self.ddpm_backward_step(key=bkey, noise=noise_hat, yt=y_augmented, t=t)
             y = y[num_context:]
             return y, None
-            
 
         ts = jnp.arange(len(self.betas))[::-1]
         keys = jax.random.split(key, len(ts))
@@ -175,8 +162,15 @@ class GaussianDiffusion:
         return y
 
 
-def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, *, num_timesteps: int, loss_type: str = "l1"):
-
+def loss(
+    process: GaussianDiffusion,
+    network: EpsModel,
+    batch: Batch,
+    key: Rng,
+    *,
+    num_timesteps: int,
+    loss_type: str = "l1",
+):
     if loss_type == "l1":
         loss_metric = lambda a, b: jnp.abs(a - b)
     elif loss_type == "l2":
@@ -184,12 +178,14 @@ def loss(process: GaussianDiffusion, network: EpsModel, batch: Batch, key: Rng, 
     else:
         raise ValueError(f"Unknown loss type {loss_type}")
 
-    @check_shapes("t: []", "y: [N, y_dim]", "x: [N, x_dim]", "mask: [N,] if mask is not None", "return: []")
+    @check_shapes(
+        "t: []", "y: [N, y_dim]", "x: [N, x_dim]", "mask: [N,] if mask is not None", "return: []"
+    )
     def loss_fn(key, t, y, x, mask):
         yt, noise = process.forward(key, y, t)
         noise_hat = network(t, yt, x, mask, key=key)
         l = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
-        l = l * (1. - mask)
+        l = l * (1.0 - mask)
         num_points = len(mask) - jnp.count_nonzero(mask)
         return jnp.sum(l) / num_points
 

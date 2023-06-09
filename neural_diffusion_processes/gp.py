@@ -1,12 +1,11 @@
 # Based on GPJAX but with some modifications
 from typing import Callable, Dict, Optional, Tuple, Union
-from gpjax.gaussian_distribution import GaussianDistribution
-from jaxutils import config
+
 import jax.numpy as jnp
-from jaxlinop import identity, DiagonalLinearOperator
-
+from gpjax.gaussian_distribution import GaussianDistribution
 from gpjax.gps import Prior
-
+from jaxlinop import DiagonalLinearOperator, identity
+from jaxutils import config
 
 from .types import ndarray
 
@@ -116,8 +115,6 @@ def predict(
             # Obviously not the most efficient way to do this
             covariance = DiagonalLinearOperator(covariance.diagonal())
 
-        return GaussianDistribution(
-            jnp.atleast_1d(mean.squeeze()), covariance
-        )
+        return GaussianDistribution(jnp.atleast_1d(mean.squeeze()), covariance)
 
     return predict
