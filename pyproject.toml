@@ -31,6 +31,10 @@ optional = true
 [tool.poetry.group.experiments.dependencies]
 tensorboardx = "^2.6.1"
 ml-tools = {git = "https://github.com/vdutor/ml-tools", rev = "main"}
+tensorflow-cpu = "^2.12.0"
+tensorflow-datasets = "^4.9.2"
+datasets = "^2.13.1"
+aim = "^3.17.5"
 
 [tool.taskipy.tasks]
 format = """

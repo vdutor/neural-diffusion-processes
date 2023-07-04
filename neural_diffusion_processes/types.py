@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Generator, Union
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from simple_pytree import Pytree, dataclass
+from simple_pytree import Pytree
 
 ndarray = Union[jnp.ndarray, np.ndarray]
 Dtype = Any
