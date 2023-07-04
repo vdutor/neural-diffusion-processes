@@ -1,3 +1,4 @@
+# From https://github.com/AminRezaei0x443/memory-efficient-attention
 import functools
 import math
 
@@ -21,7 +22,7 @@ def _query_chunk_attention(
 ):
     num_kv, num_heads, k_features = key.shape[-3:]
     v_features = value.shape[-1]
-    num_q = query.shape[-3]
+    query.shape[-3]
     key_chunk_size = min(key_chunk_size, num_kv)
     query = query / jnp.sqrt(k_features)
 
@@ -165,7 +166,7 @@ def efficient_dot_product_attention(
       Output of shape `[batch..., q_length, num_heads, v_depth_per_head]`.
     """
     num_q, num_heads, q_features = query.shape[-3:]
-    num_kv = key.shape[-3]
+    key.shape[-3]
 
     def chunk_scanner(chunk_idx, _):
         query_chunk = jax.lax.dynamic_slice(

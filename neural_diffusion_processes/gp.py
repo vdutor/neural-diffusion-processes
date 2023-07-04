@@ -1,5 +1,5 @@
-# Based on GPJAX but with some modifications
-from typing import Callable, Dict, Optional, Tuple, Union
+# From GPJax but allows for diagonal covariance matrices
+from typing import Callable, Dict, Tuple
 
 import jax.numpy as jnp
 from gpjax.gaussian_distribution import GaussianDistribution
@@ -20,35 +20,6 @@ def predict(
     predictive distribution for a given set of parameters. The returned
     function can be evaluated at a set of test inputs to compute the
     corresponding predictive density.
-
-    The predictive distribution of a conjugate GP is given by
-    .. math::
-
-        p(\\mathbf{f}^{\\star}\mid \mathbf{y}) & = \\int p(\\mathbf{f}^{\\star} \\mathbf{f} \\mid \\mathbf{y})\\\\
-        & =\\mathcal{N}(\\mathbf{f}^{\\star} \\boldsymbol{\mu}_{\mid \mathbf{y}}, \\boldsymbol{\Sigma}_{\mid \mathbf{y}}
-    where
-
-    .. math::
-
-        \\boldsymbol{\mu}_{\mid \mathbf{y}} & = k(\\mathbf{x}^{\\star}, \\mathbf{x})\\left(k(\\mathbf{x}, \\mathbf{x}')+\\sigma^2\\mathbf{I}_n\\right)^{-1}\\mathbf{y}  \\\\
-        \\boldsymbol{\Sigma}_{\mid \mathbf{y}} & =k(\\mathbf{x}^{\\star}, \\mathbf{x}^{\\star\\prime}) -k(\\mathbf{x}^{\\star}, \\mathbf{x})\\left( k(\\mathbf{x}, \\mathbf{x}') + \\sigma^2\\mathbf{I}_n \\right)^{-1}k(\\mathbf{x}, \\mathbf{x}^{\\star}).
-
-    The conditioning set is a GPJax ``Dataset`` object, whilst predictions
-    are made on a regular Jax array.
-
-    £xample:
-        For a ``posterior`` distribution, the following code snippet will
-        evaluate the predictive distribution.
-
-        >>> import gpjax as gpx
-        >>>
-        >>> xtrain = jnp.linspace(0, 1).reshape(-1, 1)
-        >>> ytrain = jnp.sin(xtrain)
-        >>> xtest = jnp.linspace(0, 1).reshape(-1, 1)
-        >>>
-        >>> params = gpx.initialise(posterior)
-        >>> predictive_dist = posterior.predict(params, gpx.Dataset(X=xtrain, y=ytrain))
-        >>> predictive_dist(xtest)
 
     Args:
         params (Dict): A dictionary of parameters that should be used to
@@ -107,7 +78,7 @@ def predict(
         # μt  +  Ktx (Kxx + Iσ²)⁻¹ (y  -  μx)
         mean = μt + jnp.matmul(Sigma_inv_Kxt.T, y - μx)
 
-        # Ktt  -  Ktx (Kxx + Iσ²)⁻¹ Kxt, TODO: Take advantage of covariance structure to compute Schur complement more efficiently.
+        # Ktt  -  Ktx (Kxx + Iσ²)⁻¹ Kxt
         covariance = Ktt - jnp.matmul(Kxt.T, Sigma_inv_Kxt)
         covariance += identity(n_test) * (jitter + obs_noise)
 

@@ -172,9 +172,15 @@ def loss(
     loss_type: str = "l1",
 ):
     if loss_type == "l1":
-        loss_metric = lambda a, b: jnp.abs(a - b)
+
+        def loss_metric(a, b):
+            return jnp.abs(a - b)
+
     elif loss_type == "l2":
-        loss_metric = lambda a, b: (a - b) ** 2
+
+        def loss_metric(a, b):
+            return (a - b) ** 2
+
     else:
         raise ValueError(f"Unknown loss type {loss_type}")
 
@@ -184,10 +190,10 @@ def loss(
     def loss_fn(key, t, y, x, mask):
         yt, noise = process.forward(key, y, t)
         noise_hat = network(t, yt, x, mask, key=key)
-        l = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
-        l = l * (1.0 - mask)
+        loss_value = jnp.sum(loss_metric(noise, noise_hat), axis=1)  # [N,]
+        loss_value = loss_value * (1.0 - mask)
         num_points = len(mask) - jnp.count_nonzero(mask)
-        return jnp.sum(l) / num_points
+        return jnp.sum(loss_value) / num_points
 
     batch_size = len(batch.x_target)
 

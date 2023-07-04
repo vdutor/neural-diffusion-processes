@@ -48,9 +48,11 @@ def scaled_dot_product_attention(
     but it must be broadcastable for addition.
 
     Mask values are in {0, 1}, where a 1 indicates which values *not* to use.
-    The mask is multiplied with *-1e9 (close to negative infinity).*
-    This is done because the mask is summed with the scaled matrix multiplication of Q and K and is applied immediately before a softmax.
-    The goal is to zero out these cells, and large negative inputs to softmax are near zero in the output.
+    The mask is multiplied with *-1e9 (close to negative infinity).* This is
+    done because the mask is summed with the scaled matrix multiplication of Q
+    and K and is applied immediately before a softmax.  The goal is to zero out
+    these cells, and large negative inputs to softmax are near zero in the
+    output.
 
     Returns:
       output, attention_weights

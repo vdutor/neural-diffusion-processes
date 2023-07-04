@@ -1,0 +1,51 @@
+# Checks that we can build and validate the Unittest
+name: Run Tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+jobs:
+  test:
+    name: Run Tests 
+    runs-on: ubuntu-latest 
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10']
+      fail-fast: false
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1.3.3
+        with:
+          version: 1.5
+
+      - name: Setup Poetry
+        run: |
+          poetry config virtualenvs.in-project true
+      - name: Cache
+        id: cache
+        uses: actions/cache@v3.2.2
+        with:
+          path: '.venv'
+          key: run-tests-${{ hashFiles('poetry.lock') }}
+
+      - name: Install Dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          if [ -d ".venv" ]; then rm -rf .venv; fi
+          poetry install
+      
+      - name: Install Package
+        run: |
+          poetry install
+      - name: Run Lint
+        run: poetry run task lint
+      - name: Run Tests
+        run: poetry run task test
