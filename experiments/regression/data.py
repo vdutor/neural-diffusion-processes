@@ -3,7 +3,7 @@ from typing import Tuple, List, Callable, Mapping, Optional
 
 import abc
 from dataclasses import dataclass
-import jaxkern
+import gpjax.kernels as jaxkern
 import jax
 import gpjax
 import jax.numpy as jnp
@@ -92,7 +92,7 @@ class FuntionalDistribution(abc.ABC):
 
 class GPFunctionalDistribution(FuntionalDistribution):
 
-    def __init__(self, kernel: jaxkern.base.AbstractKernel, params: Mapping):
+    def __init__(self, kernel: jaxkern.AbstractKernel, params: Mapping):
         self.kernel = kernel
         self.params = params
         self.mean = gpjax.mean_functions.Zero()
@@ -119,7 +119,7 @@ def register_dataset_factory(name: str):
     
 @register_dataset_factory("se")
 def _se_dataset_factory(active_dim: List[int]):
-    k = jaxkern.stationary.RBF(active_dims=active_dim)
+    k = jaxkern.RBF(active_dims=active_dim)
     input_dim = len(active_dim)
     factor = jnp.sqrt(input_dim)
     params = {
@@ -132,7 +132,7 @@ def _se_dataset_factory(active_dim: List[int]):
 
 @register_dataset_factory("matern")
 def _matern_dataset_factory(active_dim: List[int]):
-    k = jaxkern.stationary.Matern52(active_dims=active_dim)
+    k = jaxkern.Matern52(active_dims=active_dim)
     input_dim = len(active_dim)
     factor = jnp.sqrt(input_dim)
     params = {

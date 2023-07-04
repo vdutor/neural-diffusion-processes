@@ -4,10 +4,11 @@ from typing import Callable, Dict, Tuple
 import jax.numpy as jnp
 from gpjax.gaussian_distribution import GaussianDistribution
 from gpjax.gps import Prior
-from jaxlinop import DiagonalLinearOperator, identity
-from jaxutils import config
+from gpjax.linops import DiagonalLinearOperator, identity
 
 from .types import ndarray
+
+jitter = 1e-6
 
 
 def predict(
@@ -32,8 +33,6 @@ def predict(
             function that accepts an input array and returns the predictive
             distribution as a ``GaussianDistribution``.
     """
-    jitter = config.get_global_config()["jitter"]
-
     # Unpack training data
     x, y = train_data
     n = x.shape[0]
