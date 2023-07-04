@@ -1,0 +1,32 @@
+batch_size: 32
+dataset: matern
+diffusion:
+  beta_end: 0.5
+  beta_start: 0.0003
+  schedule: cosine
+  timesteps: 500
+eval:
+  batch_size: 4
+  num_samples: 128
+input_dim: 2
+loss_type: l1
+network:
+  hidden_dim: 64
+  n_layers: 4
+  num_heads: 8
+num_epochs: 250
+optimizer:
+  ema_rate: 0.995
+  end_lr: 1.0e-05
+  init_lr: 2.0e-05
+  num_decay_epochs: 200
+  num_warmup_epochs: 20
+  peak_lr: 0.001
+restore: ''
+samples_per_epoch: 16384
+schedule:
+  beta_end: 0.5
+  beta_start: 0.0003
+  schedule: cosine
+  timesteps: 500
+seed: 42

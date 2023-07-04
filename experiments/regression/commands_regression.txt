@@ -1,6 +1,0 @@
-python main.py  --config.dataset=se --config.network.n_layers=4 --config.network.hidden_dim=64 --config.dataset=matern --config.input_dim=1;
-python main.py  --config.dataset=se --config.network.n_layers=4 --config.network.hidden_dim=64 --config.dataset=matern --config.input_dim=2;
-python main.py  --config.dataset=se --config.network.n_layers=4 --config.network.hidden_dim=64 --config.dataset=matern --config.input_dim=3;
-python main.py  --config.dataset=matern --config.network.n_layers=4 --config.network.hidden_dim=64 --config.dataset=matern --config.input_dim=1;
-python main.py  --config.dataset=matern --config.network.n_layers=4 --config.network.hidden_dim=64 --config.dataset=matern --config.input_dim=2;
-python main.py  --config.dataset=matern --config.network.n_layers=4 --config.network.hidden_dim=64 --config.dataset=matern --config.input_dim=3;
