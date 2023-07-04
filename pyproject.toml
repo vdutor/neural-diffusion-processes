@@ -12,12 +12,11 @@ license = "Apache-2.0"
 
 [tool.poetry.dependencies]
 python = "^3.9,<3.11"
-jax = "^0.4.4"
-jaxlib = "^0.4.4"
+jax = ">=0.4.4"
 einops = "^0.6.0"
 check-shapes = "^1.0.0"
-jaxkern = "^0.0.5"
 dm-haiku = "^0.0.9"
+gpjax = "0.6.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.247"
@@ -25,6 +24,13 @@ pytest = "^7.2.1"
 black = "^23.1.0"
 isort = "^5.12.0"
 taskipy = "^1.10.3"
+
+[tool.poetry.group.experiments]
+optional = true
+
+[tool.poetry.group.experiments.dependencies]
+tensorboardx = "^2.6.1"
+ml-tools = {git = "https://github.com/vdutor/ml-tools", rev = "main"}
 
 [tool.taskipy.tasks]
 format = """
