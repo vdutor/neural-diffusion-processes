@@ -17,6 +17,7 @@ jaxlib = "0.4.13"
 einops = "^0.6.0"
 check-shapes = "^1.0.0"
 dm-haiku = "^0.0.9"
+typing-extensions = "^4.7.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.247"
