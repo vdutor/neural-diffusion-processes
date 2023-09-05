@@ -16,7 +16,6 @@ jax = ">=0.4.4"
 einops = "^0.6.0"
 check-shapes = "^1.0.0"
 dm-haiku = "^0.0.9"
-gpjax = "0.5.9"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.247"
