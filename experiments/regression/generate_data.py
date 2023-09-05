@@ -8,6 +8,7 @@ from itertools import product
 from tqdm import tqdm
 from data import get_batch, DATASETS, TASKS, _DATASET_CONFIGS
 
+DRYRUN = False
 PLOT = False
 BATCH_SIZE = 4
 DATASET_SIZE = {"training": int(2**14), "interpolation": 128}
@@ -39,18 +40,17 @@ for dataset, task in product(DATASETS, TASKS):
         mask_context = jnp.concatenate([b.mask_context for b in batches], axis=0)
         print(f"{dataset} {input_dim} {task}")
         print(x_context.shape, y_context.shape, x_target.shape, y_target.shape, mask_target.shape, mask_context.shape)
-        print(jnp.mean(num_target))
-        print(jnp.mean(num_context))
 
-        np.savez(
-            os.getcwd() + f"/data/{dataset}_{input_dim}_{task}.npz",
-            x_context=x_context,
-            y_context=y_context,
-            x_target=x_target,
-            y_target=y_target,
-            mask_target=mask_target,
-            mask_context=mask_context,
-        )
+        if not DRYRUN:
+            np.savez(
+                os.getcwd() + f"/data/{dataset}_{input_dim}_{task}.npz",
+                x_context=x_context,
+                y_context=y_context,
+                x_target=x_target,
+                y_target=y_target,
+                mask_target=mask_target,
+                mask_context=mask_context,
+            )
 
         if PLOT:
             num_context = mask_context.shape[1] - jnp.count_nonzero(mask_context, axis=1, keepdims=True)

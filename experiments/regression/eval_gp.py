@@ -23,15 +23,7 @@ from dataclasses import asdict
 tf.config.set_visible_devices([], 'GPU')
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
-import neural_diffusion_processes as ndp
 from neural_diffusion_processes.types import Dataset, Batch, Rng
-from neural_diffusion_processes.model import BiDimensionalAttentionModel
-from neural_diffusion_processes.process import cosine_schedule, GaussianDiffusion
-from neural_diffusion_processes.utils.config import setup_config
-from neural_diffusion_processes.utils.state import TrainingState
-from neural_diffusion_processes.utils import state as state_utils
-from neural_diffusion_processes.utils import writers
-from neural_diffusion_processes.utils import actions
 from neural_diffusion_processes.gp import predict
 
 # enable jax float64

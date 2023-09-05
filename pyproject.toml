@@ -16,7 +16,7 @@ jax = ">=0.4.4"
 einops = "^0.6.0"
 check-shapes = "^1.0.0"
 dm-haiku = "^0.0.9"
-gpjax = "0.6.0"
+gpjax = "0.5.9"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.247"
@@ -35,6 +35,7 @@ tensorflow-cpu = "^2.12.0"
 tensorflow-datasets = "^4.9.2"
 datasets = "^2.13.1"
 aim = "^3.17.5"
+distrax = "0.1.4"
 
 [tool.taskipy.tasks]
 format = """

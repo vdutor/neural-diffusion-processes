@@ -4,7 +4,7 @@ from typing import Callable, Dict, Tuple
 import jax.numpy as jnp
 from gpjax.gaussian_distribution import GaussianDistribution
 from gpjax.gps import Prior
-from gpjax.linops import DiagonalLinearOperator, identity
+from jaxlinop import DiagonalLinearOperator, identity
 
 from .types import ndarray
 
