@@ -12,11 +12,11 @@ license = "Apache-2.0"
 
 [tool.poetry.dependencies]
 python = "^3.9,<3.11"
-jax = ">=0.4.4"
+jax = "0.4.13"
+jaxlib = "0.4.13"
 einops = "^0.6.0"
 check-shapes = "^1.0.0"
 dm-haiku = "^0.0.9"
-jaxlib = "^0.4.14"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.0.247"
